@@ -1,0 +1,609 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "R102 analysis response v2.0",
+  "type": "object",
+  "properties": {
+    "response_schema_version": {
+      "type": "string",
+      "const": "2.0"
+    },
+    "execution_authorized": {
+      "type": "boolean",
+      "const": false
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "NO_TRADE",
+        "WATCH",
+        "LONG",
+        "SHORT"
+      ]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "thesis": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "entry_conditions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S"
+      }
+    },
+    "invalidation": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S"
+      }
+    },
+    "limiting_data": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S"
+      }
+    },
+    "compatibility_contract": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/contract"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "response_schema_version",
+    "execution_authorized",
+    "decision",
+    "confidence",
+    "thesis",
+    "entry_conditions",
+    "invalidation",
+    "limiting_data",
+    "compatibility_contract"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "range": {
+      "type": "object",
+      "properties": {
+        "lower": {
+          "type": "number"
+        },
+        "upper": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "lower",
+        "upper"
+      ],
+      "additionalProperties": false
+    },
+    "reference": {
+      "type": "object",
+      "properties": {
+        "primary": {
+          "type": "string",
+          "enum": [
+            "derivatives.funding.current_rate",
+            "derivatives.funding.history_72h_max",
+            "derivatives.funding.history_72h_mean",
+            "derivatives.funding.history_72h_min",
+            "derivatives.open_interest",
+            "market_context.day_notional_volume",
+            "market_context.premium",
+            "orderbook.best_ask",
+            "orderbook.best_bid",
+            "orderbook.imbalance.value",
+            "orderbook.midpoint",
+            "orderbook.spread_bps",
+            "pre_analysis.policy.max_spread_bps",
+            "price.mark",
+            "price.mid",
+            "price.oracle",
+            "timeframes.15m.indicators.atr_14",
+            "timeframes.15m.indicators.bollinger_20_2.lower",
+            "timeframes.15m.indicators.bollinger_20_2.middle",
+            "timeframes.15m.indicators.bollinger_20_2.upper",
+            "timeframes.15m.indicators.ema.120",
+            "timeframes.15m.indicators.ema.21",
+            "timeframes.15m.indicators.ema.50",
+            "timeframes.15m.indicators.ema.8",
+            "timeframes.15m.latest_candle.close",
+            "timeframes.15m.latest_candle.high",
+            "timeframes.15m.latest_candle.low",
+            "timeframes.15m.latest_candle.open",
+            "timeframes.15m.range_last_20_closed.high",
+            "timeframes.15m.range_last_20_closed.low",
+            "timeframes.1h.indicators.bollinger_20_2.lower",
+            "timeframes.1h.indicators.bollinger_20_2.middle",
+            "timeframes.1h.indicators.bollinger_20_2.upper",
+            "timeframes.1h.indicators.ema.120",
+            "timeframes.1h.indicators.ema.21",
+            "timeframes.1h.indicators.ema.50",
+            "timeframes.1h.indicators.ema.8",
+            "timeframes.1h.latest_candle.close",
+            "timeframes.1h.latest_candle.high",
+            "timeframes.1h.latest_candle.low",
+            "timeframes.1h.latest_candle.open",
+            "timeframes.1h.range_last_20_closed.high",
+            "timeframes.1h.range_last_20_closed.low",
+            "timeframes.4h.indicators.bollinger_20_2.lower",
+            "timeframes.4h.indicators.bollinger_20_2.middle",
+            "timeframes.4h.indicators.bollinger_20_2.upper",
+            "timeframes.4h.indicators.ema.120",
+            "timeframes.4h.indicators.ema.21",
+            "timeframes.4h.indicators.ema.50",
+            "timeframes.4h.indicators.ema.8",
+            "timeframes.4h.latest_candle.close",
+            "timeframes.4h.latest_candle.high",
+            "timeframes.4h.latest_candle.low",
+            "timeframes.4h.latest_candle.open",
+            "timeframes.4h.range_last_20_closed.high",
+            "timeframes.4h.range_last_20_closed.low",
+            "timeframes.5m.indicators.atr_14",
+            "timeframes.5m.indicators.bollinger_20_2.lower",
+            "timeframes.5m.indicators.bollinger_20_2.middle",
+            "timeframes.5m.indicators.bollinger_20_2.upper",
+            "timeframes.5m.indicators.ema.120",
+            "timeframes.5m.indicators.ema.21",
+            "timeframes.5m.indicators.ema.50",
+            "timeframes.5m.indicators.ema.8",
+            "timeframes.5m.latest_candle.close",
+            "timeframes.5m.latest_candle.high",
+            "timeframes.5m.latest_candle.low",
+            "timeframes.5m.latest_candle.open",
+            "timeframes.5m.range_last_20_closed.high",
+            "timeframes.5m.range_last_20_closed.low"
+          ]
+        },
+        "secondary": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "derivatives.funding.current_rate",
+                "derivatives.funding.history_72h_max",
+                "derivatives.funding.history_72h_mean",
+                "derivatives.funding.history_72h_min",
+                "derivatives.open_interest",
+                "market_context.day_notional_volume",
+                "market_context.premium",
+                "orderbook.best_ask",
+                "orderbook.best_bid",
+                "orderbook.imbalance.value",
+                "orderbook.midpoint",
+                "orderbook.spread_bps",
+                "pre_analysis.policy.max_spread_bps",
+                "price.mark",
+                "price.mid",
+                "price.oracle",
+                "timeframes.15m.indicators.atr_14",
+                "timeframes.15m.indicators.bollinger_20_2.lower",
+                "timeframes.15m.indicators.bollinger_20_2.middle",
+                "timeframes.15m.indicators.bollinger_20_2.upper",
+                "timeframes.15m.indicators.ema.120",
+                "timeframes.15m.indicators.ema.21",
+                "timeframes.15m.indicators.ema.50",
+                "timeframes.15m.indicators.ema.8",
+                "timeframes.15m.latest_candle.close",
+                "timeframes.15m.latest_candle.high",
+                "timeframes.15m.latest_candle.low",
+                "timeframes.15m.latest_candle.open",
+                "timeframes.15m.range_last_20_closed.high",
+                "timeframes.15m.range_last_20_closed.low",
+                "timeframes.1h.indicators.bollinger_20_2.lower",
+                "timeframes.1h.indicators.bollinger_20_2.middle",
+                "timeframes.1h.indicators.bollinger_20_2.upper",
+                "timeframes.1h.indicators.ema.120",
+                "timeframes.1h.indicators.ema.21",
+                "timeframes.1h.indicators.ema.50",
+                "timeframes.1h.indicators.ema.8",
+                "timeframes.1h.latest_candle.close",
+                "timeframes.1h.latest_candle.high",
+                "timeframes.1h.latest_candle.low",
+                "timeframes.1h.latest_candle.open",
+                "timeframes.1h.range_last_20_closed.high",
+                "timeframes.1h.range_last_20_closed.low",
+                "timeframes.4h.indicators.bollinger_20_2.lower",
+                "timeframes.4h.indicators.bollinger_20_2.middle",
+                "timeframes.4h.indicators.bollinger_20_2.upper",
+                "timeframes.4h.indicators.ema.120",
+                "timeframes.4h.indicators.ema.21",
+                "timeframes.4h.indicators.ema.50",
+                "timeframes.4h.indicators.ema.8",
+                "timeframes.4h.latest_candle.close",
+                "timeframes.4h.latest_candle.high",
+                "timeframes.4h.latest_candle.low",
+                "timeframes.4h.latest_candle.open",
+                "timeframes.4h.range_last_20_closed.high",
+                "timeframes.4h.range_last_20_closed.low",
+                "timeframes.5m.indicators.atr_14",
+                "timeframes.5m.indicators.bollinger_20_2.lower",
+                "timeframes.5m.indicators.bollinger_20_2.middle",
+                "timeframes.5m.indicators.bollinger_20_2.upper",
+                "timeframes.5m.indicators.ema.120",
+                "timeframes.5m.indicators.ema.21",
+                "timeframes.5m.indicators.ema.50",
+                "timeframes.5m.indicators.ema.8",
+                "timeframes.5m.latest_candle.close",
+                "timeframes.5m.latest_candle.high",
+                "timeframes.5m.latest_candle.low",
+                "timeframes.5m.latest_candle.open",
+                "timeframes.5m.range_last_20_closed.high",
+                "timeframes.5m.range_last_20_closed.low"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "primary",
+        "secondary"
+      ],
+      "additionalProperties": false
+    },
+    "rule": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "rule_id": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            "field": {
+              "type": "string",
+              "enum": [
+                "l2_midpoint",
+                "best_bid",
+                "best_ask",
+                "spread_bps",
+                "mark",
+                "context_mid",
+                "oracle",
+                "premium",
+                "daily_notional_volume",
+                "funding_current",
+                "open_interest",
+                "orderbook_imbalance",
+                "original_atr_5m",
+                "original_atr_15m"
+              ]
+            },
+            "predicate_type": {
+              "type": "string",
+              "enum": [
+                "price_above",
+                "price_below",
+                "spread_lte",
+                "funding_lte",
+                "funding_gte",
+                "oi_change_gte",
+                "oi_change_lte",
+                "imbalance_gte",
+                "imbalance_lte",
+                "max_price_displacement_atr"
+              ]
+            },
+            "threshold": {
+              "type": "number"
+            },
+            "range": {
+              "type": "null"
+            },
+            "reference_source": {
+              "$ref": "#/$defs/reference"
+            },
+            "threshold_origin": {
+              "type": "string",
+              "enum": [
+                "model_derived_from_snapshot",
+                "pre_analysis_policy",
+                "explicit_snapshot_level",
+                "user_policy",
+                "unsupported"
+              ]
+            },
+            "derivation": {
+              "type": "string",
+              "enum": [
+                "identity",
+                "ordered_range",
+                "snapshot_distance_atr"
+              ]
+            },
+            "purpose": {
+              "type": "string",
+              "enum": [
+                "entry",
+                "invalidation",
+                "quality"
+              ]
+            },
+            "required_for_valid": {
+              "type": "boolean"
+            },
+            "baseline_field": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "open_interest",
+                    "l2_midpoint",
+                    "best_bid",
+                    "best_ask",
+                    "mark",
+                    "context_mid",
+                    "oracle"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "atr_field": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "original_atr_5m",
+                    "original_atr_15m"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "rule_id",
+            "field",
+            "predicate_type",
+            "threshold",
+            "range",
+            "reference_source",
+            "threshold_origin",
+            "derivation",
+            "purpose",
+            "required_for_valid",
+            "baseline_field",
+            "atr_field"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "rule_id": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            "field": {
+              "type": "string",
+              "enum": [
+                "l2_midpoint",
+                "best_bid",
+                "best_ask",
+                "spread_bps",
+                "mark",
+                "context_mid",
+                "oracle",
+                "premium",
+                "daily_notional_volume",
+                "funding_current",
+                "open_interest",
+                "orderbook_imbalance",
+                "original_atr_5m",
+                "original_atr_15m"
+              ]
+            },
+            "predicate_type": {
+              "const": "price_in_range",
+              "type": "string"
+            },
+            "threshold": {
+              "type": "null"
+            },
+            "range": {
+              "$ref": "#/$defs/range"
+            },
+            "reference_source": {
+              "$ref": "#/$defs/reference"
+            },
+            "threshold_origin": {
+              "type": "string",
+              "enum": [
+                "model_derived_from_snapshot",
+                "pre_analysis_policy",
+                "explicit_snapshot_level",
+                "user_policy",
+                "unsupported"
+              ]
+            },
+            "derivation": {
+              "type": "string",
+              "enum": [
+                "identity",
+                "ordered_range",
+                "snapshot_distance_atr"
+              ]
+            },
+            "purpose": {
+              "type": "string",
+              "enum": [
+                "entry",
+                "invalidation",
+                "quality"
+              ]
+            },
+            "required_for_valid": {
+              "type": "boolean"
+            },
+            "baseline_field": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "open_interest",
+                    "l2_midpoint",
+                    "best_bid",
+                    "best_ask",
+                    "mark",
+                    "context_mid",
+                    "oracle"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "atr_field": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "original_atr_5m",
+                    "original_atr_15m"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "rule_id",
+            "field",
+            "predicate_type",
+            "threshold",
+            "range",
+            "reference_source",
+            "threshold_origin",
+            "derivation",
+            "purpose",
+            "required_for_valid",
+            "baseline_field",
+            "atr_field"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "unresolved": {
+      "type": "object",
+      "properties": {
+        "condition_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "purpose": {
+          "type": "string",
+          "enum": [
+            "entry",
+            "invalidation",
+            "quality"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "unsupported_predicate",
+            "new_policy_required",
+            "missing_snapshot_data",
+            "temporal_evidence_required",
+            "ambiguous_condition"
+          ]
+        },
+        "threshold_origin": {
+          "type": "string",
+          "enum": [
+            "model_derived_from_snapshot",
+            "pre_analysis_policy",
+            "explicit_snapshot_level",
+            "user_policy",
+            "unsupported"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      },
+      "required": [
+        "condition_id",
+        "purpose",
+        "reason",
+        "threshold_origin",
+        "description"
+      ],
+      "additionalProperties": false
+    },
+    "contract": {
+      "type": "object",
+      "properties": {
+        "contract_version": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "source_snapshot_checksum": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "actionable": {
+          "type": "boolean"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rule"
+          }
+        },
+        "unresolved_conditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/unresolved"
+          }
+        }
+      },
+      "required": [
+        "contract_version",
+        "source_snapshot_checksum",
+        "actionable",
+        "complete",
+        "rules",
+        "unresolved_conditions"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

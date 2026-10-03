@@ -1,0 +1,12 @@
+# Configuración local y datos privados de captura.
+/config.local.json
+/data/snapshots/
+
+# Archivos de entorno y copias compiladas.
+.venv/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.sample
+!.env.example
