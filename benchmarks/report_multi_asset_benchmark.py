@@ -36,7 +36,7 @@ def main():
                                     if all_ok else "la escalada se detuvo o quedó incompleta; consultar motivos y evidencia por escenario."), "",
              "La viabilidad demostrada se limita al tráfico recibido y a este host durante tres ventanas de 60 s. No es una capacidad máxima ni certificación de operación continua o de Termux.", "",
              "## 1. Entorno, preparación y metodología", "",
-             f"- Raíz y Git: `{ROOT}`. Se conservaron los cambios previos; sin commit ni push.",
+             "- Raíz y Git: `.` (raíz del repositorio). Se conservaron los cambios previos; sin commit ni push.",
              "- Suite de referencia: **253 tests offline, OK en 18,226 s**, ejecutados con `python/.venv/bin/python -B -m unittest discover -s tests` desde `python/`.",
              f"- Python {env['python'].splitlines()[0]}; SQLite {env['sqlite']}; websockets {env['websockets']}.",
              f"- Host: {env['platform']}; CPU {env['cpu']}; {env['logical_cpus']} CPU lógicas.",
@@ -163,11 +163,11 @@ def main():
               "5. Probar pantalla apagada, suspensión, cambio Wi-Fi/datos, reconexión y reinicio. Termux documenta restricciones de procesos/CPU en Android y la necesidad de revisar optimización de batería; no basta con que el ensayo desktop pase. [README oficial de Termux](https://github.com/termux/termux-app/blob/master/README.md). No se cambiaron ajustes del teléfono ni permisos del host.",
               "6. Mantener telemetría de overflow, edad exchange/recepción, epochs, cuotas y auditoría de recuperación. Calidad L2, cobertura espacial y continuidad del tape deben permanecer separadas; side=A/B seguirá bloqueando signos hasta verificación independiente.", "",
               "## Evidencia y reproducción", "",
-              f"Directorio conservado e ignorado: `{directory}`. No contiene la base operativa. Los JSON contienen métricas y vistas normalizadas públicas, sin paquetes crudos, users, direcciones ni credenciales.", "",
+              f"Directorio conservado e ignorado: `{directory.relative_to(ROOT).as_posix()}`, relativo a la raíz del repositorio. No contiene la base operativa. Los JSON contienen métricas y vistas normalizadas públicas, sin paquetes crudos, users, direcciones ni credenciales.", "",
+              "Estas evidencias son archivos locales, no distribuidos en GitHub. La tabla conserva sus nombres y hashes para identificar el ensayo histórico; no son enlaces ni dependencias para leer este informe. Los scripts publicados permiten realizar un nuevo ensayo y obtener evidencias propias en un directorio ignorado.", "",
               "| Archivo de evidencia | SHA-256 |", "|---|---|"]
     for path in (directory/"selection.json", *(directory/f"scenario_{size:02}.json" for size in scenarios)):
-        link="../"+str(path.relative_to(ROOT))
-        lines.append(f"| [{path.name}]({link}) | `{hashlib.sha256(path.read_bytes()).hexdigest()}` |")
+        lines.append(f"| `{path.name}` | `{hashlib.sha256(path.read_bytes()).hexdigest()}` |")
     lines += ["", "Los hashes de producción y configuración exacta están dentro de cada JSON. SHA-256 del harness utilizado: `"+hashlib.sha256((ROOT/"benchmarks/multi_asset_benchmark.py").read_bytes()).hexdigest()+"`.", "",
               "Para repetir, desde la raíz canónica; select crea otro directorio exclusivo y devuelve su ruta. Sustituir `<nueva-seleccion>` por el nuevo selection.json y comprobar status/integridad antes de cada escalada:", "",
               "```bash", "python/.venv/bin/python -B benchmarks/multi_asset_benchmark.py select",

@@ -8,7 +8,7 @@ La viabilidad demostrada se limita al tráfico recibido y a este host durante tr
 
 ## 1. Entorno, preparación y metodología
 
-- Raíz y Git: `/home/joradom/P450-Proyectos-Ramon/R102-MetaMask-Agent-Wallet-Hyperliquid`. Se conservaron los cambios previos; sin commit ni push.
+- Raíz y Git: `.` (raíz del repositorio). Se conservaron los cambios previos; sin commit ni push.
 - Suite de referencia: **253 tests offline, OK en 18,226 s**, ejecutados con `python/.venv/bin/python -B -m unittest discover -s tests` desde `python/`.
 - Python 3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]; SQLite 3.45.1; websockets 10.4.
 - Host: Linux-6.8.0-146-generic-x86_64-with-glibc2.39; CPU Intel(R) Core(TM) i7-5600U CPU @ 2.60GHz; 4 CPU lógicas.
@@ -240,14 +240,16 @@ Es evidencia favorable para monitorización ligera de corto plazo. No permite as
 
 ## Evidencia y reproducción
 
-Directorio conservado e ignorado: `/home/joradom/P450-Proyectos-Ramon/R102-MetaMask-Agent-Wallet-Hyperliquid/data/order_flow/multi_asset_benchmark_1zrhuaxz`. No contiene la base operativa. Los JSON contienen métricas y vistas normalizadas públicas, sin paquetes crudos, users, direcciones ni credenciales.
+Directorio conservado e ignorado: `data/order_flow/multi_asset_benchmark_1zrhuaxz`, relativo a la raíz del repositorio. No contiene la base operativa. Los JSON contienen métricas y vistas normalizadas públicas, sin paquetes crudos, users, direcciones ni credenciales.
+
+Estas evidencias son archivos locales, no distribuidos en GitHub. La tabla conserva sus nombres y hashes para identificar el ensayo histórico; no son enlaces ni dependencias para leer este informe. Los scripts publicados permiten realizar un nuevo ensayo y obtener evidencias propias en un directorio ignorado.
 
 | Archivo de evidencia | SHA-256 |
 |---|---|
-| [selection.json](../data/order_flow/multi_asset_benchmark_1zrhuaxz/selection.json) | `ec047e920bf5e4dbc7578d75480c993aaa6c8127ba6669f361fead4a9b83a598` |
-| [scenario_05.json](../data/order_flow/multi_asset_benchmark_1zrhuaxz/scenario_05.json) | `da1c71ed53515cbc6bd0f2d2e68096e8b30a1476549577ca9ffb328dcb0f6650` |
-| [scenario_10.json](../data/order_flow/multi_asset_benchmark_1zrhuaxz/scenario_10.json) | `1233b2aa9e2d0bb7c600afb1ff9bbc56af7e6c1e70a2de13f83c4c4ab2cc99ff` |
-| [scenario_20.json](../data/order_flow/multi_asset_benchmark_1zrhuaxz/scenario_20.json) | `b14b6a2f3f7742a05463e211822b0cc408bf279f582f5ff9540b2da0182313a4` |
+| `selection.json` | `ec047e920bf5e4dbc7578d75480c993aaa6c8127ba6669f361fead4a9b83a598` |
+| `scenario_05.json` | `da1c71ed53515cbc6bd0f2d2e68096e8b30a1476549577ca9ffb328dcb0f6650` |
+| `scenario_10.json` | `1233b2aa9e2d0bb7c600afb1ff9bbc56af7e6c1e70a2de13f83c4c4ab2cc99ff` |
+| `scenario_20.json` | `b14b6a2f3f7742a05463e211822b0cc408bf279f582f5ff9540b2da0182313a4` |
 
 Los hashes de producción y configuración exacta están dentro de cada JSON. SHA-256 del harness utilizado: `492d6e9af1e4283582001d46f6df1d07f36b79f5a465e0ffbf8ce361505129f8`.
 

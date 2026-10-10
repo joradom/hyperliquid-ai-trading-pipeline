@@ -13,6 +13,7 @@
 !.agents/rules/
 .agents/rules/*
 !.agents/rules/trading_guardrails.md
+!.agents/rules/privacy.md
 !.agents/skills/
 .agents/skills/*
 !.agents/skills/r102-hyperliquid-pipeline/
@@ -55,3 +56,41 @@ secrets.*
 .gemini/
 .claude/
 .aws/
+
+# Benchmarks: publicar código y documentación, mantener resultados locales.
+/benchmarks/results/
+/benchmarks/output/
+/benchmarks/outputs/
+/benchmarks/artifacts/
+/benchmarks/data/
+/benchmarks/snapshots/
+/benchmarks/captures/
+/benchmarks/logs/
+/benchmarks/**/*.json
+/benchmarks/**/*.jsonl
+/benchmarks/**/*.ndjson
+/benchmarks/**/*.csv
+/benchmarks/**/*.tsv
+/benchmarks/**/*.png
+/benchmarks/**/*.jpg
+/benchmarks/**/*.jpeg
+/benchmarks/**/*.webp
+# Fixtures sintéticas y recursos de documentación no son capturas reales.
+!/benchmarks/fixtures/**/*.json
+!/benchmarks/fixtures/**/*.jsonl
+!/benchmarks/fixtures/**/*.ndjson
+!/benchmarks/fixtures/**/*.csv
+!/benchmarks/fixtures/**/*.tsv
+!/benchmarks/tests/fixtures/**/*.json
+!/benchmarks/tests/fixtures/**/*.jsonl
+!/benchmarks/tests/fixtures/**/*.ndjson
+!/benchmarks/tests/fixtures/**/*.csv
+!/benchmarks/tests/fixtures/**/*.tsv
+!/benchmarks/docs/**/*.png
+!/benchmarks/docs/**/*.jpg
+!/benchmarks/docs/**/*.jpeg
+!/benchmarks/docs/**/*.webp
+
+# Las excepciones de fixtures no permiten configuraciones privadas ni secretos.
+/benchmarks/**/config.local.*
+/benchmarks/**/secrets.*

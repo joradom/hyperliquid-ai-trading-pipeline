@@ -12,6 +12,11 @@ Usar las API del proyecto y su configuración de investigación. Las instruccion
 de desarrollo están en [AGENTS.md](../../../AGENTS.md); esta skill describe
 procedimientos de mercado, no una política de ejecución ni un supervisor.
 
+Aplicar [Privacy and information disclosure](../../../AGENTS.md#privacy-and-information-disclosure)
+y [la revisión previa a publicación](../../rules/privacy.md) al preparar informes,
+ejemplos o resultados para compartir. Una consulta de cuenta autorizada no
+autoriza publicar datos reales de esa cuenta ni copiar trazas sin anonimizar.
+
 ## Entrada principal
 
 Desde el directorio `python/` del repositorio:

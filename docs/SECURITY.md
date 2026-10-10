@@ -32,6 +32,28 @@ de Python. Estas exclusiones no retiran archivos que ya estuvieran versionados
 ni limpian un historial publicado. Los snapshots pueden contener direcciones
 e historial de cuentas aunque el código no tenga una cuenta codificada.
 
+## Comprobación local antes de publicar
+
+Desde la raíz del repositorio, después de preparar únicamente los archivos
+autorizados en staging:
+
+```bash
+python3 -B tools/check_privacy.py
+git diff --cached --check
+```
+
+[check_privacy.py](../tools/check_privacy.py) examina exclusivamente los blobs
+preparados en el índice, sin leer sus copias locales ni modificar archivos.
+Devuelve 0 y no imprime texto cuando no hay hallazgos, 1 para hallazgos y 2
+si no puede completar la comprobación. La salida JSON por línea contiene solo
+archivo, línea y categoría; nunca los valores detectados. Línea 0 se refiere
+al archivo/índice. El staging vacío también devuelve 0: preparar los archivos
+antes de usarlo como revisión de publicación.
+
+No hay hooks ni dependencias nuevas. Es un control de patrones, no una garantía
+de anonimización de nombres, imágenes o formatos desconocidos. Revisar cada
+hallazgo y el contenido a publicar según [la política de privacidad](../.agents/rules/privacy.md).
+
 ## Separar lectura y ejecución
 
 Los módulos Python consultan `/info` sin firma. El pipeline no llama a

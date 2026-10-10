@@ -37,6 +37,33 @@ copias antiguas ni configurar agentes globalmente como parte de un cambio local.
 - No publicar configuraciones privadas, credenciales, direcciones personales,
   SQLite, logs ni datos de sesiones/captura. Respetar `.gitignore`.
 
+## Privacy and information disclosure
+
+Esta política es obligatoria para el código y los documentos generados por
+agentes. Publicar únicamente la información necesaria para comprender,
+ejecutar y reproducir el software.
+
+- Nunca incluir nombres reales, datos personales, direcciones reales de wallets,
+  credenciales, tokens, claves API o identificadores privados en archivos
+  destinados a publicación.
+- Nunca publicar rutas absolutas del equipo del desarrollador, nombres de
+  usuario del sistema, directorios personales o estructuras privadas del disco.
+  Usar rutas relativas al repositorio, variables como `$HOME` o placeholders
+  genéricos cuando sean necesarios.
+- No copiar literalmente salidas de terminal, logs o trazas sin comprobar y
+  anonimizar previamente su contenido.
+- No incluir información sensible en documentación, ejemplos, tests, fixtures,
+  benchmarks, informes, mensajes de commit o pull requests.
+- No divulgar detalles privados innecesarios en errores, comentarios ni archivos
+  generados. Aplicar la misma revisión a los resultados que produzcan los agentes.
+- Conservar identificadores técnicos legítimos y datos sintéticos inequívocos;
+  no renombrar módulos, contratos o rutas funcionales para ocultar falsos positivos.
+  Los archivos privados se excluyen completos, no se publican como evidencia.
+
+Antes de cualquier publicación, aplicar la clasificación y el procedimiento de
+[la regla de privacidad](.agents/rules/privacy.md). `.gitignore` y los controles
+automáticos ayudan, pero no sustituyen la revisión del contenido.
+
 ## Validación y referencias
 
 Desde `python/`: `python3 -B -m unittest discover -s tests`. Ejecutar los tests

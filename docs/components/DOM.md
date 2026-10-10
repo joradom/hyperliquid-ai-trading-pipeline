@@ -6,10 +6,10 @@ scanner ni modelos. No interpreta OBI como señal de compra/venta.
 
 ## Instalar y abrir
 
-Desde la raíz canónica:
+Desde la raíz del repositorio, independientemente de dónde se haya clonado:
 
 ```bash
-cd /home/joradom/P450-Proyectos-Ramon/R102-MetaMask-Agent-Wallet-Hyperliquid/python
+cd python
 .venv/bin/python -m pip install -r requirements-dom.txt
 .venv/bin/python -m src.dom ETH
 ```
