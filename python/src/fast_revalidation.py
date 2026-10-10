@@ -20,6 +20,7 @@ from .decision_snapshot import validate_decision_snapshot
 from .hl_client import CapturedResponse, HyperliquidInfoClient
 from .integrity import attach_checksum, canonical_checksum_payload, verify_checksum
 from .pre_analysis import TIMEFRAMES
+from .orderbook import revalidation_book
 
 DEFAULT_DEADLINE_SECONDS = 3.0
 _CAPTURE_SLOTS = threading.BoundedSemaphore(6)
@@ -202,38 +203,7 @@ def _original_gate(row: dict[str, Any]) -> None:
 
 
 def _normalize_book(raw: Any, symbol: str) -> dict[str, Any]:
-    if not isinstance(raw, dict) or raw.get("coin", symbol) != symbol:
-        raise ValueError("wrong/malformed book identity")
-    stamp, sides = raw.get("time"), raw.get("levels")
-    if type(stamp) is not int or not isinstance(sides, list) or len(sides) != 2:
-        raise ValueError("book timestamp/sides malformed")
-    normalized = []
-    for index, side in enumerate(sides):
-        if not isinstance(side, list) or not side:
-            raise ValueError("missing book side")
-        levels = []
-        for level in side:
-            if not isinstance(level, dict):
-                raise ValueError("malformed level")
-            price, size = _number(level.get("px")), _number(level.get("sz"))
-            if price is None or price <= 0 or size is None or size < 0:
-                raise ValueError("invalid level price/size")
-            levels.append({"price": price, "size": size})
-        for left, right in zip(levels, levels[1:]):
-            if (index == 0 and left["price"] < right["price"]) or (index == 1 and left["price"] > right["price"]):
-                raise ValueError("unsorted book")
-        normalized.append(levels)
-    bid, ask = normalized[0][0]["price"], normalized[1][0]["price"]
-    depths = [sum(level["size"] for level in side) for side in normalized]
-    if bid > ask or any(not math.isfinite(depth) or depth <= 0 for depth in depths) or not math.isfinite(sum(depths)):
-        raise ValueError("crossed book or unusable depth")
-    midpoint = bid / 2 + ask / 2
-    return {"source_timestamp_ms": stamp, "best_bid": bid, "best_ask": ask,
-            "l2_midpoint": midpoint, "spread_absolute": ask - bid,
-            "spread_bps": (ask - bid) / midpoint * 10_000,
-            "depth": {"bid_total_size": depths[0], "ask_total_size": depths[1],
-                      "levels_per_side": [len(side) for side in normalized]},
-            "orderbook_imbalance": (depths[0] - depths[1]) / sum(depths)}
+    return revalidation_book(raw, symbol, number=_number)
 
 
 def _normalize_context(raw: Any, symbol: str) -> dict[str, Any]:

@@ -13,7 +13,7 @@ from statistics import fmean
 from typing import Any
 
 from .integrity import attach_checksum, verify_checksum
-from .pre_analysis import POLICY, TIMEFRAMES, build_pre_analysis
+from .pre_analysis import TIMEFRAMES, build_pre_analysis, validated_policy
 
 SCHEMA_VERSION = "1.0"
 DERIVATION_VERSION = "1.0"
@@ -192,7 +192,8 @@ def _project(raw: Any, schema: dict[str, Any]) -> Any:
 
 def build_decision_snapshot(market_state: dict[str, Any], *, as_of_ms: int,
                             pre_analysis: dict[str, Any] | None = None,
-                            allow_watch_for_benchmark: bool = False) -> dict[str, Any]:
+                            allow_watch_for_benchmark: bool = False,
+                            policy: dict[str, Any] | None = None) -> dict[str, Any]:
     """Pure transform of Market State v1.1, with an explicit evaluation clock.
 
     An optional pre-analysis must exactly match the result recomputed at this
@@ -203,7 +204,7 @@ def build_decision_snapshot(market_state: dict[str, Any], *, as_of_ms: int,
     if market_state.get("schema_version") != "1.1": raise ValueError("requires Market State v1.1")
     for key in ("source", "capture", "timeframes", "price", "market_context", "derivatives", "orderbook", "data_quality"):
         if not isinstance(market_state.get(key), dict): raise ValueError(f"{key} must be an object")
-    computed = build_pre_analysis(market_state, as_of_ms=as_of_ms)
+    computed = build_pre_analysis(market_state, as_of_ms=as_of_ms, **({"policy": policy} if policy is not None else {}))
     if pre_analysis is not None:
         _require_checksum(pre_analysis, "pre_analysis")
         if pre_analysis != computed: raise ValueError("pre_analysis does not match market, rules, or evaluation time")
@@ -341,7 +342,13 @@ def validate_decision_snapshot(snapshot: Any) -> list[str]:
     eligible = not quality["blockers"] and (pre["classification"] == "ANALYZE" or applied)
     if override["applied"] != applied: errors.append("inconsistent benchmark override")
     if snapshot["decision_contract"]["eligible_for_model_review"] != eligible: errors.append("inconsistent model eligibility")
-    if pre["policy"] != POLICY: errors.append("policy does not match pre_analysis v1")
+    try: validated_policy(pre["policy"])
+    except ValueError: errors.append("policy does not match configurable pre_analysis v1")
+    for rule, threshold in (("daily_liquidity", {"min_usd": pre["policy"]["min_day_notional_volume_usd"]}),
+                            ("spread", {"max_bps": pre["policy"]["max_spread_bps"]})):
+        checks = [check for check in pre["checks"] if check["rule"] == rule]
+        if len(checks) != 1 or checks[0]["threshold"] != threshold:
+            errors.append("screening check does not match configured policy: " + rule)
     if eligible and not all(age["usable"] for age in quality["ages"].values()): errors.append("eligible snapshot has unusable timestamps")
     routing = "quality_or_screening_block" if quality["blockers"] else "benchmark_watch_override" if applied else "pre_analysis_analyze" if eligible else "pre_analysis_watch"
     if snapshot["decision_contract"]["routing_reason"] != routing: errors.append("inconsistent routing reason")

@@ -37,7 +37,13 @@ Desde `python/`:
 ```bash
 python3 -B -m src.scanner HYPE ETH SOL
 python3 -B -m src.scanner HYPE ETH SOL --json
+python3 -B -m src.scanner HYPE ETH SOL --profile experimental --json
 ```
+
+`--config` y `--profile` son opcionales. Por defecto conserva volumen mínimo
+de 1 millón USD y spread máximo de 10 bps. El perfil experimental usa
+10 millones USD y 5 bps. El contrato del scanner permanece en 1.1; la política
+efectiva aparece en cada preanálisis. Véase [Configuración](RESEARCH_CONFIG.md).
 
 `src.scanner` orquesta las capas existentes en memoria:
 `market_state -> pre_analysis -> decision_snapshot (ANALYZE only)`.
@@ -52,7 +58,8 @@ cualquier otro símbolo, no después de la salida del lote ni de una entrega
 humana. No se recarga ni se vuelve a capturar ningún mercado. Las llamadas HTTP
 dentro de cada captura de Market State siguen siendo secuenciales y cada captura
 usa su propia instancia de cliente. El número de velas por defecto, los endpoints
-y todos los umbrales del scanner siguen siendo los de las capas existentes.
+y los cálculos siguen siendo los de las capas existentes; solo volumen y spread
+se seleccionan mediante el perfil, sin mutar la política global.
 `pre_analysis.py` sigue funcionando sin red. No hay escrituras de instantáneas,
 solicitudes de cuentas/wallets, comandos de negociación, llamadas a modelos,
 reintentos, WebSockets ni nuevas fuentes. El tráfico HTTP usa solo las llamadas

@@ -1,0 +1,2 @@
+# Optional public WebSocket transport; tested locally with websockets 10.4.
+websockets>=10.4,<16

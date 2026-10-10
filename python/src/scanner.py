@@ -13,7 +13,8 @@ from typing import Any, Callable, Iterable
 from .decision_snapshot import build_decision_snapshot
 from .hl_client import HyperliquidAPIError
 from .market_state import build_market_state
-from .pre_analysis import build_pre_analysis
+from .pre_analysis import POLICY, build_pre_analysis
+from .research_config import ResearchConfig, load_config
 
 SCHEMA_VERSION = "1.1"
 MAX_CONCURRENT_CAPTURES = 3
@@ -42,7 +43,8 @@ def _iso(ms: int) -> str:
 def scan_symbols(symbols: Iterable[str], *,
                  market_builder: Callable[[str], dict[str, Any]] | None = None,
                  clock_ms: Callable[[], int] | None = None,
-                 timer: Callable[[], float] | None = None) -> dict[str, Any]:
+                 timer: Callable[[], float] | None = None,
+                 configuration: ResearchConfig | None = None) -> dict[str, Any]:
     """Capture up to three symbols concurrently; screen each on its worker.
 
     ANALYZE rows immediately build a decision snapshot at the same evaluation
@@ -51,6 +53,9 @@ def scan_symbols(symbols: Iterable[str], *,
     Every successful row includes the unchanged, complete pre-analysis result.
     """
     symbols = normalize_symbols(symbols)
+    if configuration is not None and not isinstance(configuration, ResearchConfig):
+        raise ValueError("configuration must be ResearchConfig")
+    policy_kwargs = {"policy": {**POLICY, **configuration.scanner}} if configuration is not None else {}
     market_builder = market_builder or build_market_state
     clock_ms = clock_ms or (lambda: time.time_ns() // 1_000_000)
     timer = timer or time.perf_counter
@@ -71,7 +76,7 @@ def scan_symbols(symbols: Iterable[str], *,
             stage = "pre_analysis"
             stage_started = timer()
             as_of_ms = clock_ms()
-            analysis = build_pre_analysis(market, as_of_ms=as_of_ms)
+            analysis = build_pre_analysis(market, as_of_ms=as_of_ms, **policy_kwargs)
             # A builder returning another asset must never classify this symbol.
             if analysis["symbol"] != symbol:
                 raise ValueError(f"market symbol mismatch: requested {symbol}, received {analysis['symbol']}")
@@ -79,7 +84,7 @@ def scan_symbols(symbols: Iterable[str], *,
             if analysis["classification"] == "ANALYZE":
                 stage = "decision_snapshot"
                 stage_started = timer()
-                decision = build_decision_snapshot(market, as_of_ms=as_of_ms, pre_analysis=analysis)
+                decision = build_decision_snapshot(market, as_of_ms=as_of_ms, pre_analysis=analysis, **policy_kwargs)
                 decision_seconds = timer() - stage_started
         except (HyperliquidAPIError, OSError, ValueError, TypeError, KeyError, AttributeError, OverflowError) as exc:
             duration = timer() - stage_started
@@ -148,12 +153,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("symbols", nargs="+", help="perpetual market symbols, e.g. HYPE ETH SOL")
     parser.add_argument("--json", action="store_true", help="emit one structured JSON report on stdout")
+    parser.add_argument("--config", help="research YAML file (default: config/research.yaml)")
+    parser.add_argument("--profile", help="research profile (default: YAML default_profile)")
     args = parser.parse_args(argv)
     try:
         symbols = normalize_symbols(args.symbols)
+        configuration = load_config(args.config, args.profile)
     except ValueError as exc:
         parser.error(str(exc))
-    report = scan_symbols(symbols)
+    report = scan_symbols(symbols, configuration=configuration)
     if args.json:
         print(json.dumps(report, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False))
     else:

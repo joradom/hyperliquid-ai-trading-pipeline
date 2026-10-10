@@ -1,5 +1,7 @@
 import copy
+import json
 import unittest
+from pathlib import Path
 
 from src.hl_client import CapturedResponse, HyperliquidAPIError
 from src.market_state import INTERVAL_MS, attach_checksum, build_market_state, verify_checksum
@@ -40,6 +42,14 @@ class FakeClient:
 
 
 class MarketStateTests(unittest.TestCase):
+    def test_full_snapshots_keep_pre_phase3_checksums(self):
+        fixture = json.loads((Path(__file__).parent / "fixtures/orderbook_legacy.json").read_text())
+        for mode, checksum in fixture["market_state_checksums"].items():
+            with self.subTest(mode=mode):
+                snapshot = self.build(mode)
+                self.assertTrue(verify_checksum(snapshot))
+                self.assertEqual(snapshot["integrity"]["checksum"], checksum)
+
     def build(self, mode="normal"):
         return build_market_state("HYPE", FakeClient(mode), candle_count=120, clock_ms=lambda: NOW)
 

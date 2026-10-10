@@ -7,22 +7,16 @@ El modelo recibe un resumen validado y devuelve una tesis condicional
 estructurada. Una revalidación breve comprueba después si una propuesta caducada
 sigue siendo compatible con datos actuales.
 
-Analysis Pipeline es el orquestador de todo ese recorrido, no una etapa de
-ejecución posterior al modelo. Scanner orquesta captura, preanálisis y
-construcción de Decision Snapshot. El siguiente esquema representa el flujo de
-datos dentro de esas capas:
+Research Pipeline es la entrada que descubre candidatos y conserva los informes.
+Llama a Market Screener y después a Analysis Pipeline. Este último invoca una
+sola vez Scanner y coordina las revisiones; no es una etapa posterior al modelo.
+Scanner orquesta captura, preanálisis y construcción de Decision Snapshot:
 
 ```text
-Hyperliquid /info
-    │
-    ▼
-Market State
-    │
-    ▼
-Pre-analysis (dentro de Scanner)
-    │
-    ▼
-Scanner
+Research Pipeline
+    ├─ Market Screener → símbolos ordenados y métricas de selección
+    └─ Analysis Pipeline
+           └─ Scanner: Market State → Pre-analysis
  ┌──┴─────────┬───────────────┐
 SKIP        WATCH          ANALYZE
                               │
@@ -33,7 +27,8 @@ SKIP        WATCH          ANALYZE
                       Analysis Pipeline
                               │
                               ▼
-                         ChatGPT/Codex
+                 proveedor(es) según perfil
+           Codex por defecto / Codex+Agy con consenso
                               │
                               ▼
                   respuesta JSON validada
@@ -48,6 +43,7 @@ SKIP        WATCH          ANALYZE
                               │
                               ▼
                        informe de análisis
+                 conservado por Research Pipeline
 
 Trade State ── consulta de cuenta independiente
 
@@ -59,11 +55,13 @@ MetaMask Agent Wallet ── interacción separada con Hyperliquid
 
 | Capa | Responsabilidad |
 |---|---|
+| Descubrimiento | Market Screener filtra el universo por volumen y calcula la aceleración 24h (`VOL_DELTA`) |
+| Investigación completa | Research Pipeline conecta descubrimiento y análisis y conserva los informes internos sin recapturar el scanner |
 | Adquisición | Market State consulta contexto, velas, libro y funding; Trade State consulta una cuenta aparte |
 | Cálculo determinista | Python normaliza, calcula indicadores, registra tiempos y verifica integridad |
 | Screening | Pre-analysis clasifica como `SKIP`, `WATCH` o `ANALYZE`; Scanner coordina mercados concurrentes |
 | Contrato de entrada | Decision Snapshot resume datos, reglas, unidades, limitaciones y caducidad |
-| Análisis con IA | Codex interpreta señales, formula tesis y declara condiciones de entrada e invalidación |
+| Análisis con IA | Codex por defecto; Codex+Agy cuando se selecciona consenso, conservando el contrato direccional de Codex |
 | Orquestación y validación | Analysis Pipeline limita el envío y valida la respuesta del modelo |
 | Revalidación | Fast Revalidation evalúa compatibilidad mediante dos nuevas consultas, sin otra llamada al modelo |
 | Futura ejecución | Una capa aún no integrada necesitaría controles propios de cuenta, riesgo, permisos y validez |
@@ -115,11 +113,15 @@ conserva para volver a verificarlo allí.
 | Trade State | schema 1.0 |
 | Pre-analysis | schema y reglas 1.0 |
 | Scanner | schema 1.1 |
+| Research Pipeline | schema 1.0 |
 | Decision Snapshot | schema y derivación 1.0 |
-| Analysis Pipeline | schema 1.2 |
+| Analysis Pipeline | schema 1.2 original / 1.3 con configuraciones alternativas |
 | Respuesta de análisis | schema 2.0 |
 | Contrato de compatibilidad | 1.0 |
 | Fast Revalidation | 1.0 |
+| Diagnóstico WebSocket público (standalone) | schema 1.0 |
+| Order Flow / Live Store standalone | schema y cálculo 1.0; SQLite schema 1 |
+| Vista adicional Order Book L2 | schema y cálculo 1.0; Decimal, cobertura/frescura por snapshot |
 
 Las versiones forman parte del contrato. Los campos, enums, unidades, reglas de
 procedencia y restricciones de validación se detallan en
@@ -130,10 +132,19 @@ justificarse quedan en `unresolved_conditions`.
 
 ## Aislamiento del modelo
 
-Python entrega únicamente el JSON compacto por stdin, con instrucciones fijas.
+Codex recibe únicamente el JSON compacto por stdin, con instrucciones fijas.
 El modelo no necesita descubrir APIs, abrir el repositorio ni leer snapshots
 de disco. La invocación usa `codex exec`, modo read-only, sesión efímera,
 schema de salida y herramientas/MCP desactivados, con configuración por proceso.
+
+Cuando está seleccionado, Agy recibe el mismo JSON como argumento de `--print`, usa `gemini-3.8-flash-low`,
+salida JSON, schema estático, sandbox, modo plan y expansión de skills desactivada.
+No utiliza autoaprobación de herramientas. Sus opciones no garantizan el mismo
+aislamiento que Codex; no se ha certificado esa equivalencia con una inferencia
+real en FASE 0. En consenso, ambos resultados se validan individualmente contra
+schema y procedencia del snapshot antes de consolidar. Los informes 1.3 conservan
+respuestas y estados separados en `model_review.providers`; el perfil original
+mantiene los campos de 1.2 sin esa extensión.
 
 Se aceptan solo una respuesta JSON válida y un turno completado; acciones de
 herramientas inesperadas, errores de proceso o contratos inválidos hacen fallar
@@ -158,3 +169,33 @@ la revisión del modelo. Ninguna de estas capas modifica posiciones o wallets.
 La ejecución futura tendría que diseñarse por separado. Este trabajo documental
 no añade un puente de ejecución, políticas nuevas ni cambios de comportamiento.
 Consulta las [medidas de seguridad](SECURITY.md).
+
+## Auditoría y evolución propuesta
+
+La [auditoría FASE 0](PHASE0_AUDIT.md) documenta las llamadas REST reales,
+recapturas y responsabilidades de cada módulo. El screener descubre símbolos:
+no suministra un Market State reutilizable. Encadenar un scanner externo con
+la CLI del pipeline vuelve a capturar los símbolos seleccionados.
+Research Pipeline evita ese encadenamiento: utiliza el adaptador de scanner
+en memoria de Analysis Pipeline. Su configuración está en
+[research.yaml y perfiles](components/RESEARCH_CONFIG.md); la API y el contrato
+completos están en [Research Pipeline](components/RESEARCH_PIPELINE.md).
+
+[WebSocket, Order Flow y DOM](WEBSOCKET_ORDER_FLOW_PLAN.md) es una propuesta
+por etapas. FASE 1 implementa solo el [cliente WS público](components/WEBSOCKET_CLIENT.md)
+y tipos de eventos normalizados: una conexión compartida, trades/l2Book, ACK,
+heartbeat/reconexión, deduplicación, límites y diagnóstico de continuidad.
+No se conecta a las capas REST ni cambia sus cálculos o contratos. FASE 2 añade
+[Order Flow](components/ORDER_FLOW.md), journal/checkpoints SQLite y vistas
+inmutables independientes. Reutiliza trades normalizados y epochs de FASE 1;
+los cálculos firmados reales siguen null mientras side sea unverified.
+Persistencia local y lectura financiera se distinguen: no hay ejecución.
+FASE 3 implementa [Order Book compartido](components/ORDERBOOK.md): funciones
+puras, adaptadores que conservan validación/float/redondeo legacy y la vista
+adicional `LiveStore.read_l2`. Market State 1.1 conserva campos y checksums;
+revalidación conserva gates, límites, errores y deadline. Compartir cálculos
+no sustituye capturas REST por WS ni modifica Pre-analysis o Decision Snapshot.
+SQLite sigue guardando solo flujo, sin historial L2. FASE 4 añade el
+[DOM foreground](components/DOM.md), que consume vistas inmutables con controles
+de presentación y Rich opcional; no modifica motores ni conecta el scanner/IA.
+Indicadores y nuevos filtros siguen pendientes de autorización.

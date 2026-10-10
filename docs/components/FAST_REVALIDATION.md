@@ -30,6 +30,11 @@ Solo `VALID` incluye un nuevo `valid_until_utc`.
 [`fast_revalidation.py`](../../python/src/fast_revalidation.py).
 La especificación completa se conserva a continuación.
 
+FASE 3 delega la normalización L2 en el adaptador float compatible de
+[Order Book](ORDERBOOK.md). Conserva observaciones, errores y checksums en
+fixtures equivalentes; no cambia gates, límites, captura concurrente o deadline
+ni incorpora las bandas nuevas al contrato de revalidación.
+
 Evaluación determinista de compatibilidad, de solo lectura, tras caducar una
 respuesta de análisis v2 con `LONG`/`SHORT`. No integra modelos, cuentas, wallets,
 órdenes ni ejecución. `VALID` nunca autoriza la ejecución. Las reglas originales
@@ -38,7 +43,7 @@ de filtrado permanecen intactas.
 ## Integración
 
 Analysis Pipeline v1.2 llama a `fast_revalidate(row)` dentro del trabajador de
-revisión correspondiente, inmediatamente después de que termine una respuesta
+revisión correspondiente, inmediatamente después de que termine el consenso Codex+Agy
 `LONG`/`SHORT` válida con `requires_revalidation=true`. No espera a otro activo.
 `WATCH`/`NO_TRADE` y `LONG`/`SHORT` sin caducar mantienen
 `fast_revalidation=null` y `execution_authorized=false`.
@@ -55,7 +60,8 @@ reintentos. La fila añade un documento `fast_revalidation` completo con checksu
 y `timing.fast_revalidation_seconds`. La salida para personas muestra el estado
 y los códigos de motivo. La respuesta original, `requires_revalidation`,
 `expired_at_completion` y `snapshot.valid_until_utc` permanecen intactos. El tiempo
-individual de Codex excluye la revalidación; el tiempo real de la fase conjunta
+de revisión del par de modelos (`codex_exec_seconds`, nombre histórico) excluye
+la revalidación; el tiempo real de la fase conjunta
 de revisión la incluye.
 
 ## Dos fuentes concurrentes y una espera acotada
@@ -124,8 +130,8 @@ instantánea validada:
   se advierte explícitamente.
 - Desfase hacia el futuro <= 5,000 ms, conservando la comprobación de antigüedad
   con signo.
-- Diferencial <= `max_spread_bps` original (10).
-- Volumen diario >= mínimo original (1,000,000 USD).
+- Diferencial <= `max_spread_bps` del snapshot original (actualmente 5).
+- Volumen diario >= mínimo del snapshot original (actualmente 10,000,000 USD).
 
 Los incumplimientos de diferencial o liquidez con datos actuales son `INVALID`.
 OI/funding/desequilibrio no tienen comprobaciones implícitas de dirección o

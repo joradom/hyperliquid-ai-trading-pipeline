@@ -15,6 +15,10 @@ una revisión de IA. Es un filtrado de investigación, no una estrategia calibra
 
 Market State v1.1 con checksum y una hora explícita de evaluación en la API
 `build_pre_analysis`. En la CLI la hora es UTC actual salvo `--as-of`.
+La API acepta una `policy` explícita: solo admite variar volumen y spread.
+Scanner y Analysis Pipeline la derivan de [perfiles YAML](RESEARCH_CONFIG.md).
+Por defecto usa 1 millón USD y 10 bps; el perfil experimental conserva
+10 millones USD y 5 bps. Las reglas de indicadores y confluencia se mantienen.
 
 ## Salida
 
@@ -103,4 +107,3 @@ límites, marcas temporales obsoletas/futuras/ausentes, manipulación del checks
 datos malformados, actualidad desconocida esperada, lotes de CLI sin red e
 inmutabilidad de entradas. Ejecutar toda la suite sin escribir bytecode mediante
 `python3 -B -m unittest discover -s tests -v`.
-

@@ -49,9 +49,20 @@ automáticamente en una operación. El contrato mantiene
 
 Limitar los permisos al mínimo necesario. Evitar que el modelo explore
 innecesariamente el sistema, lea credenciales, descubra APIs o ejecute comandos.
-La revisión actual recibe datos por stdin y usa un schema estático; desactiva
+La revisión Codex recibe datos por stdin y usa un schema estático; desactiva
 herramientas, web, MCP y extensiones por proceso, con cwd `/tmp` y sandbox
 read-only.
+
+En perfiles que lo seleccionan, Agy recibe el mismo snapshot como argumento de
+`--print` y usa el mismo schema. El perfil predeterminado utiliza solo Codex.
+Sus flags locales son sandbox, modo plan y desactivación de expansión de skills;
+no se autoaprueban herramientas. No se afirma que estos flags desactiven todas
+las herramientas/MCP ni que equivalgan al aislamiento Codex. No se realizó una
+inferencia real para certificarlos en FASE 0. Si se activa consenso, ambos
+resultados deben superar validación individual de estructura y procedencia
+antes de consolidar.
+Los errores del proveedor se registran solo con tipo/código y no imprimen
+stderr, comandos completos ni contenido arbitrario de excepciones.
 
 Estos ajustes concretos están en
 [Analysis Pipeline](components/ANALYSIS_PIPELINE.md). No equivalen a una

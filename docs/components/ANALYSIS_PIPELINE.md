@@ -13,24 +13,28 @@ acceso y errores aislados por activo. No ejecuta operaciones ni invoca `mm`.
 
 ## Entrada
 
-Símbolos de perpetuos y una CLI Codex compatible con autenticación previa.
+Símbolos de perpetuos y CLI Codex compatible, con autenticación previa.
+Agy solo es necesario cuando el perfil seleccionado lo incluye.
 Scanner construye las observaciones y el contrato en memoria.
 
 ## Salida
 
-Informe con schema 1.2, respuesta de análisis v2.0 cuando es válida y
+Informe con schema 1.2 original por defecto o 1.3 con perfiles alternativos,
+respuesta de análisis v2.0 cuando es válida y
 `fast_revalidation` cuando corresponde. Siempre mantiene
 `execution_authorized=false`. La salida puede ser legible o JSON.
 
 ## Referencia técnica
 
-**Versión: v1.2.** Los ejemplos se ejecutan desde `python/`. Fuentes:
+**Versión: v1.2 por defecto / v1.3 con perfiles alternativos.** Los ejemplos se ejecutan desde `python/`. Fuentes:
 [`analysis_pipeline.py`](../../python/src/analysis_pipeline.py),
 [`analysis_response.py`](../../python/src/analysis_response.py) y
 [`analysis_response.schema.json`](../../python/src/analysis_response.schema.json).
 La especificación completa se conserva a continuación.
 
-Orquestación de solo lectura: `scanner v1.1 -> decision_snapshot v1 -> codex exec`.
+Orquestación predeterminada de solo lectura: `scanner v1.1 -> decision_snapshot v1 -> Codex`.
+El perfil `experimental` conserva `Codex+Agy -> consenso`.
+Opciones, contratos y tiempos: [Configuración de investigación](RESEARCH_CONFIG.md).
 No integra mm, wallets, órdenes, firmas ni ejecución. No añade datos ni modifica
 `pre_analysis` o las reglas de calidad/actualidad.
 Las respuestas `LONG`/`SHORT` caducadas utilizan
@@ -44,13 +48,15 @@ Desde `python/`:
 ```bash
 python3 -B -m src.analysis_pipeline HYPE ETH SOL
 python3 -B -m src.analysis_pipeline HYPE ETH SOL --json
+python3 -B -m src.analysis_pipeline HYPE ETH SOL --profile experimental --json
+python3 -B -m src.analysis_pipeline HYPE --config config/research.yaml --profile default
 python3 -B -m unittest discover -s tests -v
 ```
 
-Requiere una CLI `codex` compatible en PATH con autenticación ya disponible.
+Requiere las CLI seleccionadas compatibles en PATH con autenticación ya disponible.
 El pipeline no instala, configura ni inicia sesión. Solo intenta iniciar la CLI
 cuando existe un resultado `ANALYZE` elegible, lo que puede consumir tokens.
-Sin candidatos elegibles, no construye el comando ni inicia un proceso de Codex.
+Sin candidatos elegibles, no inicia procesos de ninguno de los modelos.
 Las pruebas usan simulaciones y nunca utilizan autenticación, acceso a la red
 ni llamadas reales a modelos.
 
@@ -71,7 +77,7 @@ ni llamadas reales a modelos.
 4. La validez se comprueba inicialmente y otra vez tras serializar y preparar el
    comando, justo antes de iniciar el proceso. Se conserva la condición exacta
    `now <= valid_until_utc`; no se cambian `as_of`, tolerancias ni caducidad.
-5. El JSON compacto se pasa por stdin, con instrucciones fijas como argumento.
+5. El JSON compacto se pasa por stdin a Codex y, si está seleccionado, como argumento de `--print` a Agy, con instrucciones fijas.
    No se crean archivos temporales, instantáneas ni salidas en disco. El único
    archivo pasado a `--output-schema` es el schema estático versionado del
    proyecto, no datos de mercado. La CLI lo carga; el modelo no necesita
@@ -79,7 +85,7 @@ ni llamadas reales a modelos.
 6. Las revisiones de candidatos `ANALYZE` se ejecutan concurrentemente en un
    grupo de como máximo **3** trabajadores, sin reintentos. `SKIP`/`WATCH`
    nunca entran en la cola. Cada trabajador valida su candidato y genera su
-   propio comando y stdin; cada llamada a subproceso tiene tuberías y contexto
+   propios comandos y payload; por defecto se lanza solo Codex. Con consenso se lanzan dos procesos en paralelo (hasta seis procesos para tres candidatos). Cada llamada a subproceso tiene tuberías y contexto
    de sesión independientes. Los resultados conservan el orden de los símbolos
    aunque los procesos terminen en otro orden. Con más de tres candidatos, los
    siguientes esperan en una cola: si uno caduca antes de obtener un trabajador
@@ -139,6 +145,48 @@ las comprobaciones. Si no hay candidatos elegibles, el benchmark no valida el
 proveedor del modelo ni la autenticación. Referencias:
 [modo no interactivo](https://learn.chatgpt.com/docs/non-interactive-mode) y
 [configuración](https://learn.chatgpt.com/docs/config-file/config-reference).
+
+## Agy, validación individual y consenso
+
+Esta sección describe el perfil experimental. Por defecto no se invoca Agy ni
+se consolida: se conserva la respuesta validada de Codex, incluida su confianza.
+
+Agy usa `gemini-3.8-flash-low`, `--output-format json`, `--json-schema`,
+`--sandbox --mode plan --disable-slash-commands`, cwd externo y timeout de
+180 segundos. Se retiró `--dangerously-skip-permissions`. La ayuda local no
+ofrece la misma desactivación exhaustiva de herramientas/MCP que Codex: no se
+afirma aislamiento equivalente ni se ha probado la autenticación o compatibilidad
+en directo durante FASE 0. Los tests siempre simulan los procesos.
+
+`parse_codex_output(..., snapshot=...)` y `parse_agy_output(..., snapshot=...)`
+validan individualmente schema v2.0, `execution_authorized=false` y procedencia
+del contrato, aunque la otra respuesta sea WATCH o NO_TRADE. Agy acepta un
+envelope JSON (incluido pretty-print) o JSONL con exactamente un campo de resultado
+`response`, cuyo valor es un objeto o una cadena JSON completa. Rechaza errores,
+claves duplicadas, NaN, enums inválidos, texto extra y JSON extraído de prosa.
+No se ocultan contratos inválidos detrás del voto del otro modelo.
+
+La política de consenso existente se conserva:
+
+| Codex / Agy | NO_TRADE | WATCH | LONG | SHORT |
+|---|---|---|---|---|
+| NO_TRADE | NO_TRADE | NO_TRADE | NO_TRADE | NO_TRADE |
+| WATCH | NO_TRADE | WATCH | WATCH | WATCH |
+| LONG | NO_TRADE | WATCH | LONG | WATCH |
+| SHORT | NO_TRADE | WATCH | WATCH | SHORT |
+
+La confianza es `high` si los votos coinciden y `low` si difieren, como antes;
+es una heurística de acuerdo, no una probabilidad ni una mejora de calidad de datos.
+Tesis combina ambas respuestas; entrada, invalidación y limiting_data conservan
+los campos de Codex. Para propuestas direccionales se conserva únicamente su
+compatibility_contract, sin fusionar reglas ni añadir filtros.
+
+Cada fallo sustituye solo su voto por un WATCH de seguridad con listas vacías
+válidas. Ese sustituto NO se registra como respuesta del modelo: el proveedor
+queda con `status=error`, `response=null` y error de tipo/código sin contenido
+de stderr, comando o excepción. La fila e informe quedan en estado de error
+(salida CLI 1), pero conservan un resultado seguro WATCH o el NO_TRADE del modelo
+válido. No se llama a revalidación para esos resultados no direccionales.
 
 ## Contrato de respuesta de análisis v2.0
 
@@ -286,38 +334,44 @@ JSON `kind=analysis_pipeline`, `schema_version=1.2`, `read_only=true`,
 (3 segundos por defecto; configurable mediante `--revalidation-deadline-seconds`).
 Los checksums existentes enlazan origen, preanálisis y revisión.
 
-`SKIP`/`WATCH` o una comprobación fallida: `not_invoked`, respuesta null y
-tiempo de Codex cero. Sin respuesta válida, `requires_revalidation` y
-`expired_at_completion` son null (esa instantánea no se revisó; esto no equivale
-a ausencia de riesgo). Respuesta válida: `completed`. Error: `error` y
-`error.stage=review_gate` o `codex_exec`. `codex_invocations` cuenta intentos de
-iniciar la CLI (incluidos fallos de instalación/proceso), no tokens consumidos.
-No se fabrican decisiones `NO_TRADE` tras errores: la ausencia de revisión no
-es una decisión del modelo.
+Con perfiles alternativos, el informe usa schema 1.3 y añade `profile`,
+`consensus`, `models`, `provider_invocations`, `agy_invocations`,
+`agy_exec_seconds_total`, `consolidation_seconds_total` y
+`model_review_wall_seconds`. Cada fila añade `model_review.providers` con
+`status`, `response`, `error` y `seconds` de cada proveedor, y tiempos de Agy,
+consolidación y revisión conjunta. El perfil predeterminado conserva exactamente
+los campos originales de 1.2, sin extensiones de proveedores.
+
+`SKIP`/`WATCH` o gate fallido: `not_invoked`, respuesta null, proveedores vacíos en 1.3
+y tiempos de modelo cero. Sin envío, las marcas de finalización son null.
+Con respuestas válidas: `completed`. En consenso, un fallo individual produce
+`error`, con fallback seguro etiquetado y error genérico de etapa `model_review`.
+Sin consenso, un fallo produce `error` y respuesta null.
+`codex_invocations` y `agy_invocations` cuentan intentos por candidato, incluidos
+fallos de instalación/proceso; no miden tokens consumidos.
 
 `capture_seconds_total`, `pre_analysis_seconds_total` y
 `decision_snapshot_seconds_total` son sumas separadas del scanner; las capturas
 concurrentes se solapan, por lo que no deben interpretarse como tiempo real
 transcurrido. `scanner_seconds` es el tiempo real de captura/preanálisis/
-instantánea. `timing.codex_exec_seconds` mide individualmente subproceso más
-validación de respuesta. `codex_exec_seconds_total` conserva la suma de esas
-duraciones, que ahora se solapan: **no es tiempo real transcurrido y no puede
-restarse del tiempo total**. `codex_review_wall_seconds` mide la fase conjunta
-de revisión desde crear el grupo de trabajadores hasta recoger todos los
-resultados (incluidas comprobaciones/preparación, colas y cierre del grupo).
-Es cero cuando no se intenta ninguna invocación; el tiempo dedicado a comprobar
-candidatos no elegibles permanece incluido en `total_seconds`. Con hasta tres
-procesos, el tiempo real se aproxima a la mayor duración individual más la
-sobrecarga, en lugar de la suma de duraciones individuales. Desde v1.2, este
-tiempo real incluye revalidaciones dentro de los trabajadores;
-`codex_exec_seconds` las excluye. `total_seconds` incluye el flujo completo y
+instantánea. `timing.codex_exec_seconds` mide solo el proceso Codex y su validación;
+su total es la suma entre activos. En 1.3, Agy tiene sus tiempos independientes
+y `consolidation_seconds` mide únicamente consolidación y validación del consenso.
+Las sumas se solapan: **no equivalen al tiempo real transcurrido**.
+`codex_review_wall_seconds` va del inicio de la primera invocación Codex al final
+de la última. `model_review_wall_seconds` en 1.3 abarca las revisiones de todos
+los proveedores y la consolidación, antes de terminar sus revisiones y sin
+añadir la revalidación posterior. Estos intervalos pueden incluir esperas entre
+candidatos. Sin invocaciones los tiempos de modelo son cero; los gates siguen
+incluidos en `total_seconds`. `total_seconds` incluye el flujo completo y
 las comprobaciones antes del formato de stdout. El `timing.total_seconds`
 original de cada fila conserva su significado en el scanner.
 
 La salida legible muestra la clasificación de cada activo, motivos,
 `codex_invoked`, tiempo individual y `requires_revalidation`;
-decisión/confianza/tesis solo aparecen cuando se invocó Codex y la respuesta es
-válida. Para `LONG`/`SHORT` añade únicamente
+en perfiles alternativos incluye estados y tiempos individuales de proveedores
+y consolidación. La decisión/confianza/tesis corresponde al proveedor individual,
+o al consenso si está activado. Para `LONG`/`SHORT` añade únicamente
 `compatibility: complete=yes/no | rules=N | unresolved=N`; el contrato completo
 solo aparece con `--json`. También muestra el tiempo real del scanner, el tiempo
 real de revisión de Codex, estado/motivos y tiempo sumado de la revalidación
@@ -327,13 +381,12 @@ Salida 1: errores aislados. Salida 2: argumentos inválidos, antes de capturar.
 
 ## Pruebas de concurrencia sin red
 
-Las barreras verifican dos revisiones simultáneas y un máximo de tres para seis
-candidatos; los eventos fuerzan la finalización fuera de orden. Cada ejecutor
-simulado recibe y verifica solo la instantánea de su símbolo. Un reloj virtual
-con duraciones de 2 y 3 segundos produce 3 segundos de tiempo real conjunto y
-una suma de 5 segundos, sin esperas ni llamadas reales. Las pruebas también cubren
-errores concurrentes por símbolo, un candidato que caduca antes del envío, otro
-que caduca en la cola y respuestas conservadas con `requires_revalidation=true`
-tras caducar durante el análisis. La suite conserva las pruebas de
-SKIP/WATCH -> cero y ANALYZE -> una invocación, integridad, stdout, inmutabilidad
-y prohibición de acceso/escritura de archivos por el pipeline.
+Barreras verifican dos modelos simultáneos por candidato y un máximo de tres
+candidatos/seis procesos; los resultados mantienen el orden de símbolos aunque
+termine antes otro activo. Los mocks devuelven el formato real de cada CLI.
+Se prueban las 16 combinaciones del consenso, fallos individuales, validación
+de ambos contratos incluso ante el veto del otro, confidencialidad de errores,
+caducidad en cola y durante revisión, y revalidación dentro del trabajador sin
+esperar a que terminen otros activos. SKIP/WATCH no invocan ningún modelo.
+Los clocks virtuales prueban el solapamiento de duraciones individuales; el
+tiempo de la revisión del candidato incluye coordinación de ambos procesos.

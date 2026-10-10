@@ -10,9 +10,10 @@ from unittest.mock import Mock, patch
 
 from src.analysis_pipeline import (CODEX_CWD, CODEX_TIMEOUT_SECONDS, MAX_CONCURRENT_REVIEWS, MODEL, RESPONSE_SCHEMA_PATH,
                                    codex_command, format_report, main, parse_codex_output,
-                                   review_gate, run_pipeline, validate_response)
+                                   parse_agy_output, consolidate_responses, review_gate, run_pipeline, validate_response)
 from src.scanner import scan_symbols
 from src.fast_revalidation import revalidation_failure
+from src.research_config import ResearchConfig
 from test_market_state import NOW
 import test_scanner
 from test_analysis_response import directional_response
@@ -23,12 +24,33 @@ RESPONSE = {"response_schema_version": "2.0", "execution_authorized": False, "co
             "entry_conditions": ["Confirmación del nivel"], "invalidation": ["Pérdida del soporte"],
             "limiting_data": ["Sin flujo de órdenes histórico"]}
 
+# Preserve the pending multimodel tests as explicit consensus coverage.
+CONSENSUS_CONFIG = ResearchConfig(profile="consensus", providers=("codex", "agy"), consensus=True)
+
 
 def output(response=None):
     events = [{"type": "thread.started", "thread_id": "mock"}, {"type": "turn.started"},
               {"type": "item.completed", "item": {"type": "agent_message", "text": json.dumps(response or RESPONSE)}},
               {"type": "turn.completed", "usage": {"input_tokens": 10, "output_tokens": 10}}]
     return "\n".join(json.dumps(event) for event in events)
+
+
+def model_output(command, response=None):
+    response = response if response is not None else RESPONSE
+    return output(response) if command[0] == "codex" else json.dumps({"response": json.dumps(response)})
+
+
+def snapshot_input(command, kwargs):
+    return json.loads(kwargs["input"] if command[0] == "codex" else command[2].split("\n\nJSON Data:\n", 1)[1])
+
+
+def successful_runner(command, **kwargs):
+    return SimpleNamespace(returncode=0, stdout=model_output(command), stderr="")
+
+
+def expected_consensus(response=None):
+    response = response if response is not None else RESPONSE
+    return consolidate_responses(response, response)
 
 
 class AnalysisPipelineTests(unittest.TestCase):
@@ -41,8 +63,8 @@ class AnalysisPipelineTests(unittest.TestCase):
         return scan_symbols(symbols, market_builder=markets.__getitem__, clock_ms=lambda: NOW + 1000)
 
     def run_report(self, scan, runner=None, clock=None):
-        runner = runner or Mock(return_value=SimpleNamespace(returncode=0, stdout=output(), stderr=""))
-        report = run_pipeline(scan["symbols"], scanner=Mock(return_value=scan), runner=runner,
+        runner = runner or Mock(side_effect=successful_runner)
+        report = run_pipeline(scan["symbols"], configuration=CONSENSUS_CONFIG, scanner=Mock(return_value=scan), runner=runner,
                               clock_ms=clock or (lambda: NOW + 1000),
                               revalidator=lambda row, **kwargs: revalidation_failure(row, "TEST_NO_CAPTURE", now_ms=NOW+120_000))
         return report, runner
@@ -67,19 +89,20 @@ class AnalysisPipelineTests(unittest.TestCase):
         scan = self.scan(("WATCH", "ANALYZE", "SKIP"))
         before = copy.deepcopy(scan)
         scanner = Mock(return_value=scan)
-        runner = Mock(return_value=SimpleNamespace(returncode=0, stdout=output(), stderr=""))
+        runner = Mock(side_effect=successful_runner)
         with patch("src.analysis_pipeline.serialize_decision_snapshot", wraps=__import__(
                 "src.decision_snapshot", fromlist=["serialize_decision_snapshot"]).serialize_decision_snapshot) as serialize:
-            report = run_pipeline(["hype", "ETH", "SOL"], scanner=scanner, runner=runner, clock_ms=lambda: NOW + 1000)
+            report = run_pipeline(["hype", "ETH", "SOL"], configuration=CONSENSUS_CONFIG, scanner=scanner, runner=runner, clock_ms=lambda: NOW + 1000)
         scanner.assert_called_once()
         self.assertEqual(scanner.call_args.args[0], ["HYPE", "ETH", "SOL"])
         self.assertIs(serialize.call_args.args[0], scan["results"][1]["decision_snapshot"])
         self.assertEqual(scan, before)
-        runner.assert_called_once()
-        self.assertEqual(json.loads(runner.call_args.kwargs["input"]), scan["results"][1]["decision_snapshot"])
+        self.assertEqual(runner.call_count, 2)
+        codex_call = next(call for call in runner.call_args_list if call.args[0][0] == "codex")
+        self.assertEqual(snapshot_input(codex_call.args[0], codex_call.kwargs), scan["results"][1]["decision_snapshot"])
         self.assertEqual(report["codex_invocations"], 1)
         self.assertEqual([r["symbol"] for r in report["results"]], ["HYPE", "ETH", "SOL"])
-        self.assertEqual(report["results"][1]["model_review"]["response"], RESPONSE)
+        self.assertEqual(report["results"][1]["model_review"]["response"], expected_consensus())
         self.assertFalse(report["results"][1]["model_review"]["requires_revalidation"])
         self.assertFalse(report["results"][1]["model_review"]["execution_authorized"])
 
@@ -89,7 +112,7 @@ class AnalysisPipelineTests(unittest.TestCase):
         self.assertEqual(snapshot["quality"]["market_status"], "degraded")
         self.assertTrue(snapshot["quality"]["warnings"])
         report, runner = self.run_report(scan)
-        runner.assert_called_once()
+        self.assertEqual(runner.call_count, 2)
         self.assertEqual(report["status"], "ok")
 
     def test_all_ineligible_conditions_do_not_spawn(self):
@@ -135,20 +158,20 @@ class AnalysisPipelineTests(unittest.TestCase):
     def test_two_analyze_start_concurrently_and_expired_responses_are_retained(self):
         scan = self.scan(("ANALYZE", "ANALYZE"))
         now = NOW + 1000
-        started = Barrier(2)
+        started = Barrier(4)
         def runner(*args, **kwargs):
             nonlocal now
             # Both processes must have passed the dispatch gate before expiry.
             started.wait(timeout=5)
             now = NOW + 120_000
-            return SimpleNamespace(returncode=0, stdout=output(), stderr="")
+            return SimpleNamespace(returncode=0, stdout=model_output(args[0]), stderr="")
         mocked = Mock(side_effect=runner)
         report, _ = self.run_report(scan, runner=mocked, clock=lambda: now)
-        self.assertEqual(mocked.call_count, 2)
+        self.assertEqual(mocked.call_count, 4)
         self.assertEqual(report["codex_invocations"], 2)
         self.assertEqual(report["status"], "ok")
         for row in report["results"]:
-            self.assertEqual(row["model_review"]["response"], RESPONSE)
+            self.assertEqual(row["model_review"]["response"], expected_consensus())
             self.assertEqual(row["model_review"]["status"], "completed")
             self.assertTrue(row["model_review"]["expired_at_completion"])
             self.assertTrue(row["model_review"]["requires_revalidation"])
@@ -160,7 +183,7 @@ class AnalysisPipelineTests(unittest.TestCase):
         self.assertEqual(MAX_CONCURRENT_REVIEWS, 3)
         symbols = ["HYPE", "ETH", "SOL", "BTC", "DOGE", "AVAX"]
         scan = self.scan(("ANALYZE",) * 6, symbols)
-        started = Barrier(3)
+        started = Barrier(6)
         lock = Lock()
         active = peak = 0
         def runner(*args, **kwargs):
@@ -170,11 +193,11 @@ class AnalysisPipelineTests(unittest.TestCase):
                 peak = max(peak, active)
             try:
                 started.wait(timeout=5)
-                return SimpleNamespace(returncode=0, stdout=output(), stderr="")
+                return SimpleNamespace(returncode=0, stdout=model_output(args[0]), stderr="")
             finally:
                 with lock: active -= 1
         report, _ = self.run_report(scan, runner=Mock(side_effect=runner))
-        self.assertEqual(peak, 3)
+        self.assertEqual(peak, 6)
         self.assertEqual(active, 0)
         self.assertEqual(report["codex_invocations"], 6)
         self.assertEqual(report["status"], "ok")
@@ -183,26 +206,26 @@ class AnalysisPipelineTests(unittest.TestCase):
     def test_queued_candidate_expired_before_worker_start_never_invokes(self):
         scan = self.scan(("ANALYZE",) * 4, ["HYPE", "ETH", "SOL", "BTC"])
         now = NOW + 1000
-        started = Barrier(3)
+        started = Barrier(6)
         def runner(*args, **kwargs):
             nonlocal now
             started.wait(timeout=5)
             now = NOW + 120_000
-            return SimpleNamespace(returncode=0, stdout=output(), stderr="")
+            return SimpleNamespace(returncode=0, stdout=model_output(args[0]), stderr="")
         report, mocked = self.run_report(scan, runner=Mock(side_effect=runner), clock=lambda: now)
-        self.assertEqual(mocked.call_count, 3)
+        self.assertEqual(mocked.call_count, 6)
         self.assertEqual(report["codex_invocations"], 3)
         self.assertEqual(report["results"][3]["model_review"]["reason"], "snapshot_expired")
         self.assertFalse(report["results"][3]["model_review"]["invoked"])
 
     def test_completion_order_and_separate_payloads_do_not_mix_assets(self):
         scan = self.scan(("ANALYZE", "ANALYZE"))
-        started = Barrier(2)
+        started = Barrier(4)
         eth_done = Event()
         lock = Lock()
         completions, inputs, commands = [], {}, []
         def runner(command, **kwargs):
-            snapshot = json.loads(kwargs["input"])
+            snapshot = snapshot_input(command, kwargs)
             symbol = snapshot["symbol"]
             with lock:
                 inputs[symbol] = snapshot
@@ -213,23 +236,24 @@ class AnalysisPipelineTests(unittest.TestCase):
             if symbol == "ETH": eth_done.set()
             response = directional_response(snapshot, "LONG" if symbol == "HYPE" else "SHORT")
             response["thesis"] = "Tesis " + symbol
-            return SimpleNamespace(returncode=0, stdout=output(response), stderr="")
+            return SimpleNamespace(returncode=0, stdout=model_output(command, response), stderr="")
         report, _ = self.run_report(scan, runner=Mock(side_effect=runner))
-        self.assertEqual(completions, ["ETH", "HYPE"])
+        self.assertEqual(completions[0], "ETH")
+        self.assertCountEqual(completions, ["ETH", "ETH", "HYPE", "HYPE"])
         self.assertIsNot(commands[0], commands[1])
         self.assertEqual(report["codex_invocations"], 2)
         for original, reviewed in zip(scan["results"], report["results"]):
             symbol = original["symbol"]
             self.assertEqual(inputs[symbol], original["decision_snapshot"])
             self.assertEqual(reviewed["symbol"], symbol)
-            self.assertEqual(reviewed["model_review"]["response"]["thesis"], "Tesis " + symbol)
+            self.assertEqual(reviewed["model_review"]["response"]["thesis"], expected_consensus(directional_response(inputs[symbol], "LONG" if symbol == "HYPE" else "SHORT") | {"thesis": "Tesis " + symbol})["thesis"])
 
     def test_simulated_concurrent_wall_time_is_maximum_not_sum(self):
         scan = self.scan(("ANALYZE", "ANALYZE"))
         parent = get_ident()
         thread_clock = local()
         lock = Lock()
-        started = Barrier(2)
+        started = Barrier(4)
         wall = 0.0
         # Independent worker timelines start together. The parent's virtual wall
         # advances to the latest completion, not the sum of process durations.
@@ -239,19 +263,20 @@ class AnalysisPipelineTests(unittest.TestCase):
             return getattr(thread_clock, "elapsed", 0.0)
         def runner(*args, **kwargs):
             nonlocal wall
-            symbol = json.loads(kwargs["input"])["symbol"]
+            symbol = snapshot_input(args[0], kwargs)["symbol"]
             started.wait(timeout=5)
             duration = 2.0 if symbol == "HYPE" else 3.0
             thread_clock.elapsed = duration
             with lock: wall = max(wall, duration)
-            return SimpleNamespace(returncode=0, stdout=output(), stderr="")
-        report = run_pipeline(scan["symbols"], scanner=Mock(return_value=scan), runner=runner,
+            return SimpleNamespace(returncode=0, stdout=model_output(args[0]), stderr="")
+        report = run_pipeline(scan["symbols"], configuration=CONSENSUS_CONFIG, scanner=Mock(return_value=scan), runner=runner,
                               timer=timer, clock_ms=lambda: NOW + 1000)
         durations = [row["timing"]["codex_exec_seconds"] for row in report["results"]]
-        self.assertEqual(durations, [2.0, 3.0])
-        self.assertEqual(report["codex_review_wall_seconds"], max(durations))
+        provider_durations = [row["model_review"]["providers"]["codex"]["seconds"] for row in report["results"]]
+        self.assertEqual(provider_durations, [2.0, 3.0])
+        self.assertEqual(report["codex_review_wall_seconds"], max(provider_durations))
         self.assertEqual(report["codex_exec_seconds_total"], sum(durations))
-        self.assertLess(report["codex_review_wall_seconds"], report["codex_exec_seconds_total"])
+        self.assertLess(report["codex_review_wall_seconds"], sum(provider_durations))
         self.assertEqual(report["total_seconds"], 3.0)
 
     def test_timeout_nonzero_and_malformed_output_isolated_per_asset(self):
@@ -260,16 +285,16 @@ class AnalysisPipelineTests(unittest.TestCase):
                     SimpleNamespace(returncode=0, stdout="not json", stderr="")]
         for failure in failures:
             with self.subTest(failure=type(failure).__name__):
-                started = Barrier(2)
+                started = Barrier(4)
                 def invoke(*args, **kwargs):
                     started.wait(timeout=5)
-                    if json.loads(kwargs["input"])["symbol"] == "HYPE":
+                    if snapshot_input(args[0], kwargs)["symbol"] == "HYPE":
                         if isinstance(failure, BaseException): raise failure
                         return failure
-                    return SimpleNamespace(returncode=0, stdout=output(), stderr="")
+                    return SimpleNamespace(returncode=0, stdout=model_output(args[0]), stderr="")
                 runner = Mock(side_effect=invoke)
                 report, _ = self.run_report(self.scan(("ANALYZE", "ANALYZE")), runner=runner)
-                self.assertEqual(runner.call_count, 2)
+                self.assertEqual(runner.call_count, 4)
                 self.assertEqual(report["status"], "partial_failure")
                 self.assertEqual(report["results"][0]["model_review"]["status"], "error")
                 self.assertEqual(report["results"][1]["model_review"]["status"], "completed")
@@ -277,19 +302,19 @@ class AnalysisPipelineTests(unittest.TestCase):
 
     def test_invalid_v2_is_isolated_and_directional_summary_is_short(self):
         scan = self.scan(("ANALYZE", "ANALYZE"))
-        started = Barrier(2)
+        started = Barrier(4)
         def runner(*args, **kwargs):
-            snapshot = json.loads(kwargs["input"])
+            snapshot = snapshot_input(args[0], kwargs)
             response = directional_response(snapshot)
             if snapshot["symbol"] == "HYPE":
                 response["compatibility_contract"]["rules"][0]["threshold"] += 1
             started.wait(timeout=5)
-            return SimpleNamespace(returncode=0, stdout=output(response), stderr="")
+            return SimpleNamespace(returncode=0, stdout=model_output(args[0], response), stderr="")
         report, mocked = self.run_report(scan, runner=Mock(side_effect=runner), clock=lambda: NOW + 1000)
-        self.assertEqual(mocked.call_count, 2)
+        self.assertEqual(mocked.call_count, 4)
         self.assertEqual(report["status"], "partial_failure")
         self.assertEqual(report["results"][0]["model_review"]["status"], "error")
-        self.assertIsNone(report["results"][0]["model_review"]["response"])
+        self.assertEqual(report["results"][0]["model_review"]["response"]["decision"], "WATCH")
         self.assertEqual(report["results"][1]["model_review"]["status"], "completed")
         human = format_report(report)
         self.assertIn("compatibility: complete=yes | rules=1 | unresolved=0", human)
@@ -301,10 +326,10 @@ class AnalysisPipelineTests(unittest.TestCase):
         now = NOW + 1000
         def runner(*args, **kwargs):
             nonlocal now
-            response = directional_response(json.loads(kwargs["input"]), "SHORT")
+            response = directional_response(snapshot_input(args[0], kwargs), "SHORT")
             response["compatibility_contract"].update(complete=False, unresolved_conditions=[unresolved()])
             now = NOW + 120_000
-            return SimpleNamespace(returncode=0, stdout=output(response), stderr="")
+            return SimpleNamespace(returncode=0, stdout=model_output(args[0], response), stderr="")
         report, _ = self.run_report(scan, runner=runner, clock=lambda: now)
         review = report["results"][0]["model_review"]
         self.assertEqual(review["status"], "completed")
@@ -314,7 +339,8 @@ class AnalysisPipelineTests(unittest.TestCase):
 
     def test_subprocess_flags_stdin_no_shell_no_snapshot_file(self):
         report, runner = self.run_report(self.scan())
-        command = runner.call_args.args[0]
+        codex_call = next(call for call in runner.call_args_list if call.args[0][0] == "codex")
+        command = codex_call.args[0]
         self.assertEqual(command[:2], ["codex", "exec"])
         self.assertEqual(command[command.index("--model") + 1], "gpt-6.1-sol")
         self.assertEqual(command[command.index("--sandbox") + 1], "read-only")
@@ -326,14 +352,102 @@ class AnalysisPipelineTests(unittest.TestCase):
             self.assertIn(config, command)
         self.assertNotIn("--output-last-message", command)
         self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", command)
-        kwargs = runner.call_args.kwargs
+        kwargs = codex_call.kwargs
         self.assertFalse(kwargs["shell"])
         self.assertEqual(kwargs["cwd"], CODEX_CWD)
         self.assertEqual(kwargs["timeout"], CODEX_TIMEOUT_SECONDS)
         self.assertEqual(json.loads(kwargs["input"])["kind"], "decision_snapshot")
         self.assertEqual(report["model"], MODEL)
         self.assertEqual(report["reasoning_effort"], "low")
-        self.assertEqual(report["schema_version"], "1.2")
+        self.assertEqual(report["schema_version"], "1.3")
+        agy_call = next(call for call in runner.call_args_list if call.args[0][0] == "agy")
+        self.assertEqual(snapshot_input(agy_call.args[0], agy_call.kwargs), json.loads(kwargs["input"]))
+        self.assertIn("--sandbox", agy_call.args[0])
+        self.assertIn("--disable-slash-commands", agy_call.args[0])
+        self.assertNotIn("--dangerously-skip-permissions", agy_call.args[0])
+        self.assertFalse(agy_call.kwargs["shell"])
+        self.assertEqual(agy_call.kwargs["cwd"], CODEX_CWD)
+        self.assertEqual(report["models"]["agy"], "gemini-3.8-flash-low")
+
+    def test_all_consensus_pairs_preserve_existing_priority_and_codex_contract(self):
+        snapshot = self.scan()["results"][0]["decision_snapshot"]
+        decisions = ("NO_TRADE", "WATCH", "LONG", "SHORT")
+        matrix = (("NO_TRADE", "NO_TRADE", "NO_TRADE", "NO_TRADE"),
+                  ("NO_TRADE", "WATCH", "WATCH", "WATCH"),
+                  ("NO_TRADE", "WATCH", "LONG", "WATCH"),
+                  ("NO_TRADE", "WATCH", "WATCH", "SHORT"))
+        for codex in ("NO_TRADE", "WATCH", "LONG", "SHORT"):
+            for agy in ("NO_TRADE", "WATCH", "LONG", "SHORT"):
+                expected = matrix[decisions.index(codex)][decisions.index(agy)]
+                responses = {name: directional_response(snapshot, decision) if decision in ("LONG", "SHORT")
+                             else dict(RESPONSE, decision=decision)
+                             for name, decision in (("codex", codex), ("agy", agy))}
+                def runner(command, **kwargs):
+                    return SimpleNamespace(returncode=0, stdout=model_output(command, responses[command[0]]))
+                with self.subTest(codex=codex, agy=agy):
+                    report, _ = self.run_report(self.scan(), runner=runner)
+                    review = report["results"][0]["model_review"]
+                    self.assertEqual(review["status"], "completed")
+                    self.assertEqual(review["response"]["decision"], expected)
+                    self.assertEqual(review["response"]["confidence"], "high" if codex == agy else "low")
+                    self.assertEqual(review["response"]["compatibility_contract"],
+                                     responses["codex"]["compatibility_contract"] if expected in ("LONG", "SHORT") else None)
+                    self.assertEqual(set(review["providers"]), {"codex", "agy"})
+                    self.assertFalse(review["response"]["execution_authorized"])
+
+    def test_each_provider_validates_snapshot_provenance_even_when_other_vetoes(self):
+        scan = self.scan()
+        snapshot = scan["results"][0]["decision_snapshot"]
+        for failed in ("codex", "agy"):
+            for defect in ("checksum", "threshold", "execution", "enum", "extra"):
+                bad = directional_response(snapshot)
+                if defect == "checksum": bad["compatibility_contract"]["source_snapshot_checksum"] = "0" * 64
+                elif defect == "threshold": bad["compatibility_contract"]["rules"][0]["threshold"] += 1
+                elif defect == "execution": bad["execution_authorized"] = True
+                elif defect == "enum": bad["decision"] = "BUY"
+                else: bad["extra"] = True
+                def runner(command, **kwargs):
+                    response = bad if command[0] == failed else dict(RESPONSE, decision="NO_TRADE")
+                    return SimpleNamespace(returncode=0, stdout=model_output(command, response))
+                with self.subTest(provider=failed, defect=defect):
+                    report, _ = self.run_report(scan, runner=runner)
+                    review = report["results"][0]["model_review"]
+                    self.assertEqual(report["status"], "failed")
+                    self.assertEqual(review["providers"][failed]["status"], "error")
+                    self.assertIsNone(review["providers"][failed]["response"])
+                    self.assertEqual(review["response"]["decision"], "NO_TRADE")
+                    self.assertFalse(review["execution_authorized"])
+
+    def test_single_provider_failure_is_safe_watch_and_does_not_revalidate(self):
+        for failed in ("codex", "agy"):
+            for failure in (subprocess.TimeoutExpired("private command payload", 180),
+                            RuntimeError("private exception payload")):
+                scan = self.scan()
+                snapshot = scan["results"][0]["decision_snapshot"]
+                def runner(command, **kwargs):
+                    if command[0] == failed: raise failure
+                    return SimpleNamespace(returncode=0, stdout=model_output(command, directional_response(snapshot)))
+                with self.subTest(provider=failed, failure=type(failure).__name__):
+                    report, _ = self.run_report(scan, runner=runner)
+                    row = report["results"][0]
+                    self.assertEqual(row["model_review"]["response"]["decision"], "WATCH")
+                    self.assertIsNone(row["fast_revalidation"])
+                    self.assertEqual(row["model_review"]["providers"][failed]["status"], "error")
+                    self.assertNotIn("private", json.dumps(report))
+
+    def test_agy_envelopes_are_strict_and_support_pretty_json_and_jsonl(self):
+        for value in (json.dumps({"response": json.dumps(RESPONSE)}, indent=2),
+                      json.dumps({"response": RESPONSE}),
+                      json.dumps({"type": "metadata"}) + "\n" + model_output(["agy"])):
+            self.assertEqual(parse_agy_output(value), RESPONSE)
+        for value in ("[]", "{}", '{"response":"{}","response":"{}"}',
+                      json.dumps({"response": "```json\n" + json.dumps(RESPONSE) + "\n```"}),
+                      json.dumps({"response": json.dumps(RESPONSE) + " trailing"}),
+                      json.dumps({"response": RESPONSE, "is_error": True}),
+                      model_output(["agy"]) + "\n" + model_output(["agy"]),
+                      '{"response":NaN}', json.dumps({"response": dict(RESPONSE, confidence=0.5)})):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                parse_agy_output(value)
 
     def test_response_schema_and_runtime_validator_agree(self):
         schema = json.loads(RESPONSE_SCHEMA_PATH.read_text())
@@ -362,7 +476,7 @@ class AnalysisPipelineTests(unittest.TestCase):
         with patch("builtins.open", side_effect=AssertionError("unexpected file IO")), patch(
                 "pathlib.Path.open", side_effect=AssertionError("unexpected file IO")):
             report, runner = self.run_report(scan)
-        runner.assert_called_once()
+        self.assertEqual(runner.call_count, 2)
         self.assertEqual(report["status"], "ok")
 
     def test_unknown_response_contract_rejected_before_codex(self):
@@ -379,7 +493,7 @@ class AnalysisPipelineTests(unittest.TestCase):
         scan = self.scan(("SKIP", "ANALYZE"))
         scan["results"][0].update(status="error", error={"stage": "capture", "message": "fixture failed"})
         report, runner = self.run_report(scan)
-        runner.assert_called_once()
+        self.assertEqual(runner.call_count, 2)
         self.assertEqual(report["status"], "partial_failure")
 
     def test_separate_timings_and_human_output(self):
@@ -421,9 +535,9 @@ class AnalysisPipelineTests(unittest.TestCase):
     def test_production_subprocess_is_mocked_in_normal_tests(self):
         scan = self.scan()
         with patch("src.analysis_pipeline.scan_symbols", return_value=scan), patch(
-                "src.analysis_pipeline.subprocess.run", return_value=SimpleNamespace(returncode=0, stdout=output())) as runner:
-            report = run_pipeline(["HYPE"], clock_ms=lambda: NOW + 1000)
-        runner.assert_called_once()
+                "src.analysis_pipeline.subprocess.run", side_effect=successful_runner) as runner:
+            report = run_pipeline(["HYPE"], configuration=CONSENSUS_CONFIG, clock_ms=lambda: NOW + 1000)
+        self.assertEqual(runner.call_count, 2)
         self.assertEqual(report["codex_invocations"], 1)
 
 

@@ -14,6 +14,8 @@ Algunas capas futuras podrían interactuar con fondos reales.
 ## Documentación
 
 - [Guía de uso](docs/USAGE.md)
+- [Research Pipeline: descubrimiento y revisión sin símbolos](docs/components/RESEARCH_PIPELINE.md)
+- [Instrucciones para agentes de desarrollo](AGENTS.md)
 - [Arquitectura](docs/ARCHITECTURE.md)
 - [Componentes](docs/components/)
 - [Herramientas externas](docs/external-tools/)

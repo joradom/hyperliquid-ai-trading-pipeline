@@ -1,2 +1,2 @@
 # No third-party dependencies. hl_api.py uses only the Python 3 standard library.
-
+# Optional standalone public WS transport: see requirements-ws.txt.

@@ -61,19 +61,35 @@ nuevos y subdirectorios. Los archivos locales siguen disponibles para análisis.
 
 ## Flujo básico
 
+Para descubrir e investigar sin indicar símbolos, desde `python/`:
+
+```bash
+python3 -B -m src.research_pipeline --profile default --top-n 10 --limit 3 --max-workers 3 --json
+```
+
+[Research Pipeline](components/RESEARCH_PIPELINE.md) conecta el screener con
+una sola captura del scanner y las revisiones elegibles, conservando los
+informes internos, ranking y errores parciales. No depende de Night Guard.
+
 1. Market State consulta y normaliza datos, calcula indicadores y guarda una
    instantánea cuando se usa su CLI.
 2. Pre-analysis evalúa una instantánea existente sin consultar la red.
 3. Scanner captura mercados en directo y aplica ese filtrado en memoria.
    Solo prepara Decision Snapshot para `ANALYZE`.
 4. Analysis Pipeline ejecuta el scanner, revisa los candidatos elegibles mediante
-   Codex y valida la respuesta estructurada.
+   Codex por defecto. El perfil experimental usa Codex y Agy en paralelo con consenso.
 5. Si una respuesta válida `LONG`/`SHORT` caduca durante la revisión, realiza
    Fast Revalidation con dos consultas de solo lectura.
 
 No es necesario ejecutar Market State primero para usar Scanner o Analysis
 Pipeline: ambos capturan sus propios datos. No se reutilizan automáticamente
 archivos antiguos como datos actuales.
+
+Scanner y Analysis Pipeline admiten `--config` y `--profile` opcionales.
+El YAML predeterminado es `python/config/research.yaml`: `default` conserva
+1 millón USD de volumen mínimo, 10 bps de spread máximo y solo Codex;
+`experimental` conserva 10 millones USD, 5 bps y consenso Codex+Agy.
+Consulta [Configuración de investigación](components/RESEARCH_CONFIG.md).
 
 ## Market State
 
@@ -114,6 +130,25 @@ benchmark: no permite que el pipeline operativo revise `WATCH`.
 Consulta [Pre-analysis](components/PRE_ANALYSIS.md) y
 [Decision Snapshot](components/DECISION_SNAPSHOT.md).
 
+## Market Screener: descubrimiento y aceleración de volumen
+
+```bash
+# Top 10 activos con mayor aceleración de volumen en 24h
+python3 -B -m src.market_screener
+
+# Top 5 por volumen nocional absoluto en formato JSON
+python3 -B -m src.market_screener --limit 5 --sort-by volume --json
+
+# Encadenamiento con el Scanner mediante tubería
+python3 -B -m src.market_screener --limit 3 --symbols-only | xargs python3 -B -m src.scanner
+```
+
+`market_screener` extrae el universo completo de perpetuos en una sola llamada de red y
+descarga en paralelo las velas horarias de las últimas 48h para comparar el volumen de las
+últimas 24h con el periodo precedente (`VOL_DELTA`), filtrando pares con bajo volumen.
+`--symbols-only` emite únicamente los tickers separados por espacio para encadenar con
+`src.scanner` o `src.analysis_pipeline`. Consulta [Market Screener](components/MARKET_SCREENER.md).
+
 ## Scanner: salida legible y JSON
 
 ```bash
@@ -141,7 +176,8 @@ python3 -B -m src.analysis_pipeline HYPE ETH SOL --json --revalidation-deadline-
 ```
 
 Solo envía al modelo candidatos `ANALYZE` elegibles, sin bloqueos y vigentes.
-La salida legible muestra clasificación, motivos, si se invocó Codex y tiempos;
+La salida legible muestra clasificación, motivos, si se invocó Codex, el estado
+de ambos modelos y tiempos;
 decisión, confianza y tesis solo aparecen tras una respuesta válida.
 `--json` incluye el contrato completo de compatibilidad, revisión y revalidación.
 
@@ -195,7 +231,7 @@ financieras para validar estas capas.
 | Market State / Trade State | Consultas sin firma a `/info` | Sus CLI guardan JSON de instantáneas |
 | Pre-analysis / Decision Snapshot | Ninguno | Salida por stdout |
 | Scanner | Consultas de mercado a `/info` | Salida por stdout, sin instantáneas en disco |
-| Analysis Pipeline | Captura de mercado y revisión por Codex | El pipeline no guarda archivos; la CLI externa puede mantener estado interno |
+| Analysis Pipeline | Captura de mercado y revisión por proveedores seleccionados | El pipeline no guarda archivos; las CLI externas pueden mantener estado interno |
 | Fast Revalidation | `l2Book` y `metaAndAssetCtxs` | Resultado en memoria |
 
 Solo lectura se refiere al estado financiero: guardar un JSON local no modifica
@@ -211,6 +247,21 @@ colocación de SL/TP ni consumidor operativo de la revalidación.
 contrato de mercado. Trade State existe como consulta separada y no se incorpora
 a la revisión del modelo.
 
+En el perfil experimental, el consenso conserva `NO_TRADE` si cualquiera veta, `WATCH` si cualquiera espera
+o si hay desacuerdo direccional, y `LONG`/`SHORT` solo si ambos coinciden.
+El contrato estructurado utilizado después continúa siendo el de Codex.
+Los errores de un proveedor se indican por separado y degradan su voto a un
+`WATCH` de seguridad; el informe devuelve estado de error y salida CLI 1.
+Una coincidencia de votos produce confianza `high` por la heurística existente,
+no una probabilidad de éxito.
+
+La CLI del pipeline ya contiene un scanner. Si se usa un scanner externo como
+prefiltro y se pasan después sus símbolos al pipeline, habrá nuevas capturas.
+Para el recorrido habitual basta `screener → analysis_pipeline`; no existe
+todavía una entrada CLI para reutilizar un informe de scanner. Véanse la
+[auditoría FASE 0](PHASE0_AUDIT.md) y el
+[plan WS/Order Flow/DOM](WEBSOCKET_ORDER_FLOW_PLAN.md).
+
 Los umbrales son heurísticas iniciales; no acreditan rentabilidad. Los lotes no
 son observaciones atómicas. Los datos pueden caducar antes del envío, durante
 la revisión o antes de un uso posterior. Contexto/OI carecen de marca temporal
@@ -222,6 +273,75 @@ Las consultas de cuenta utilizan un valor explícito, el entorno o la
 configuración local. Antes de una publicación completa deben revisarse los
 archivos que se van a compartir, según [Seguridad](SECURITY.md); `.gitignore`
 no elimina contenido que ya se hubiese publicado.
+
+## WebSocket público standalone — FASE 1
+
+Desde `python/`, con la dependencia opcional `requirements-ws.txt` disponible:
+
+```bash
+python3 -B -m src.ws_client ETH HYPE --seconds 60
+python3 -B -m src.ws_client ETH HYPE --seconds 60 --json
+python3 -B -m src.ws_client ETH HYPE --continuous
+```
+
+Una conexión compartida recibe trades y snapshots l2Book, controla ACK,
+heartbeat y reconexión. La CLI imprime solo estadísticas y edades, sin persistir
+paquetes o direcciones; Ctrl+C cancela y cierra la conexión. No calcula todavía
+Delta/CVD ni alimenta al pipeline. `side_semantics=unverified` conserva la
+incertidumbre sobre agresión y `execution_authorized=false`.
+Consultar [WebSocket Client](components/WEBSOCKET_CLIENT.md) para los límites,
+las pruebas offline y la comparación reproducible A/B contra el libro anterior.
+
+## Order Flow y recuperación local — FASE 2
+
+Desde `python/`:
+
+```bash
+python3 -B -m src.live_store ETH HYPE --seconds 60 --json
+python3 -B -m src.live_store --recover-only --json
+python3 -B -m src.live_store --replay-trades 20000 --db ../data/order_flow/replay_new.sqlite3 --json
+```
+
+La carpeta `data/order_flow/` está ignorada por Git. Journal normalizado y
+checkpoint se confirman en una misma transacción. Los reenvíos retenidos no
+se suman de nuevo; desconexión/reinicio abre segmentos independientes. El
+replay exige base nueva y utiliza exclusivamente fixtures synthetic con
+semántica conocida. En mainnet, volumen/conteo observado sí están disponibles,
+pero Delta/CVD y comprador/vendedor siguen null por `side_semantics=unverified`.
+La recuperación muestra estado histórico `recovered_not_live`, no una señal
+vigente. Ver [Order Flow](components/ORDER_FLOW.md) para definiciones, warmup,
+fronteras, memoria, cuotas y resultados de aceptación. No alimenta al scanner.
+
+## Order Book compartido — FASE 3
+
+La API Python añade `live.read_l2("mainnet", "ETH", as_of_ms=...)`, que devuelve
+otra vista inmutable con métricas, procedencia, precisión y calidad del libro.
+`live` es la instancia `LiveStore` sincronizada mediante `sync_ws`; se mantienen
+`read`, `read_all` y la salida CLI anteriores. Si se omite `as_of_ms`, se evalúa
+con el reloj local actual. No hay nuevo comando de captura ni datos L2 en SQLite.
+
+Ver [Order Book](components/ORDERBOOK.md) para OBI observado/válido, cobertura
+por bandas, frescura independiente del flujo y compatibilidad de adaptadores.
+Desde `python/`, la suite offline del entorno virtual se ejecuta con:
+
+```bash
+.venv/bin/python -B -m unittest discover -s tests
+```
+
+## DOM interactivo — FASE 4
+
+El [DOM de FASE 4](components/DOM.md) se abre por separado desde `python/`:
+
+```bash
+.venv/bin/python -m pip install -r requirements-dom.txt
+.venv/bin/python -m src.dom ETH
+.venv/bin/python -m src.dom ETH HYPE SOL
+```
+
+Controles sin Enter: Q salir, P pausar solo pantalla, +/- niveles, Tab activo;
+Ctrl-C cancela. Cada ejecución usa una base nueva bajo `data/order_flow/dom_runs/`.
+Opciones: `--refresh 4`, `--levels 10`, `--no-color`, `--seconds 15` para prueba
+corta pública. No invoca modelos ni ejecuta operaciones.
 
 ## Cliente de consulta hl_api.py
 

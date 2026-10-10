@@ -9,6 +9,7 @@ from typing import Any, Callable
 from .hl_client import HyperliquidAPIError, HyperliquidInfoClient
 from .indicators import calculate, contains_only_finite_numbers
 from .integrity import attach_checksum, canonical_checksum_payload, verify_checksum
+from .orderbook import market_state_book
 
 SCHEMA_VERSION = "1.1"
 INTERVAL_MS = {"5m": 300_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000}
@@ -97,36 +98,7 @@ def _normalize_candles(raw: list[dict[str, Any]], interval_ms: int, now_ms: int,
 
 
 def _book(raw: dict[str, Any], issues: list[dict[str, str]]) -> dict[str, Any]:
-    levels = raw.get("levels", [])
-    if not isinstance(levels, list):
-        levels = []; _issue(issues, "malformed_response", "orderbook", "levels is not a list")
-    bids = levels[0] if len(levels) > 0 and isinstance(levels[0], list) else []
-    asks = levels[1] if len(levels) > 1 and isinstance(levels[1], list) else []
-    if not bids or not asks:
-        _issue(issues, "missing_orderbook_side", "orderbook", "bid or ask levels are absent")
-    def norm(side: list[Any]) -> list[dict[str, Any]]:
-        result = []
-        for level in side:
-            if not isinstance(level, dict):
-                _issue(issues, "malformed_response", "orderbook", "level is not an object"); continue
-            result.append({"price": _display_number(level.get("px")), "size": _number(level.get("sz")), "order_count": level.get("n")})
-        return result
-    bids, asks = norm(bids), norm(asks)
-    best_bid = bids[0]["price"] if bids else None; best_ask = asks[0]["price"] if asks else None
-    bid_depth = sum(x["size"] or 0 for x in bids); ask_depth = sum(x["size"] or 0 for x in asks); total = bid_depth + ask_depth
-    spread = _display_number(best_ask - best_bid) if best_bid is not None and best_ask is not None else None
-    midpoint = _display_number((best_ask + best_bid) / 2) if best_bid is not None and best_ask is not None else None
-    try:
-        source_ms = int(raw["time"]) if raw.get("time") is not None else None
-    except (TypeError, ValueError):
-        source_ms = None; _issue(issues, "invalid_timestamp", "orderbook", "orderbook time is not an integer")
-    return {"timestamp_ms": source_ms, "timestamp_utc": _iso(source_ms), "best_bid": best_bid, "best_ask": best_ask,
-            "midpoint": midpoint, "spread_absolute": spread,
-            "spread_pct_of_mid": spread / midpoint * 100 if spread is not None and midpoint else None,
-            "depth": {"bid_total_size": bid_depth, "ask_total_size": ask_depth, "levels_per_side": [len(bids), len(asks)]},
-            "imbalance": {"value": (bid_depth - ask_depth) / total if total else None,
-                          "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"},
-            "levels": {"bids": bids, "asks": asks}}
+    return market_state_book(raw, issues, number=_number, display_number=_display_number, iso=_iso)
 
 
 def validate_snapshot(snapshot: dict[str, Any]) -> list[str]:

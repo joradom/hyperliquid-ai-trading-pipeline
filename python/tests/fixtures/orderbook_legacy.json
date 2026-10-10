@@ -1,0 +1,4031 @@
+{
+  "captured_before_phase3": true,
+  "cases": [
+    {
+      "name": "normal",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "value": {
+          "source_timestamp_ms": 1999999999900,
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "l2_midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_bps": 99.50248756218905,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "orderbook_imbalance": -0.2
+        }
+      },
+      "ws": {
+        "value": {
+          "coin": "ETH",
+          "time_ms": 1999999999900,
+          "bids": [
+            [
+              "100",
+              "2",
+              1
+            ]
+          ],
+          "asks": [
+            [
+              "101",
+              "3",
+              2
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "rounded",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100.12345678901234",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "100.22345678901234",
+              "sz": "1",
+              "n": 1
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.123456789012,
+          "best_ask": 100.223456789012,
+          "midpoint": 100.173456789012,
+          "spread_absolute": 0.1,
+          "spread_pct_of_mid": 0.09982684356258432,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 1.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": 0.3333333333333333,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.123456789012,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 100.223456789012,
+                "size": 1.0,
+                "order_count": 1
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "value": {
+          "source_timestamp_ms": 1999999999900,
+          "best_bid": 100.12345678901234,
+          "best_ask": 100.22345678901235,
+          "l2_midpoint": 100.17345678901233,
+          "spread_absolute": 0.10000000000000853,
+          "spread_bps": 9.982684356259249,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 1.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "orderbook_imbalance": 0.3333333333333333
+        }
+      },
+      "ws": {
+        "value": {
+          "coin": "ETH",
+          "time_ms": 1999999999900,
+          "bids": [
+            [
+              "100.12345678901234",
+              "2",
+              1
+            ]
+          ],
+          "asks": [
+            [
+              "100.22345678901234",
+              "1",
+              1
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "tiny",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "0.00000000000001",
+              "sz": "1",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "0.00000000000002",
+              "sz": "1",
+              "n": 1
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 0.0,
+          "best_ask": 0.0,
+          "midpoint": 0.0,
+          "spread_absolute": 0.0,
+          "spread_pct_of_mid": null,
+          "depth": {
+            "bid_total_size": 1.0,
+            "ask_total_size": 1.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": 0.0,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 0.0,
+                "size": 1.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 0.0,
+                "size": 1.0,
+                "order_count": 1
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "value": {
+          "source_timestamp_ms": 1999999999900,
+          "best_bid": 1e-14,
+          "best_ask": 2e-14,
+          "l2_midpoint": 1.5e-14,
+          "spread_absolute": 1e-14,
+          "spread_bps": 6666.666666666667,
+          "depth": {
+            "bid_total_size": 1.0,
+            "ask_total_size": 1.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "orderbook_imbalance": 0.0
+        }
+      },
+      "ws": {
+        "value": {
+          "coin": "ETH",
+          "time_ms": 1999999999900,
+          "bids": [
+            [
+              "1E-14",
+              "1",
+              1
+            ]
+          ],
+          "asks": [
+            [
+              "2E-14",
+              "1",
+              1
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "empty",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": []
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": null,
+          "best_ask": null,
+          "midpoint": null,
+          "spread_absolute": null,
+          "spread_pct_of_mid": null,
+          "depth": {
+            "bid_total_size": 0,
+            "ask_total_size": 0,
+            "levels_per_side": [
+              0,
+              0
+            ]
+          },
+          "imbalance": {
+            "value": null,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [],
+            "asks": []
+          }
+        },
+        "issues": [
+          {
+            "code": "missing_orderbook_side",
+            "scope": "orderbook",
+            "detail": "bid or ask levels are absent"
+          }
+        ]
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "book timestamp/sides malformed"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_book_sides"
+      }
+    },
+    {
+      "name": "empty_sides",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [],
+          []
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": null,
+          "best_ask": null,
+          "midpoint": null,
+          "spread_absolute": null,
+          "spread_pct_of_mid": null,
+          "depth": {
+            "bid_total_size": 0,
+            "ask_total_size": 0,
+            "levels_per_side": [
+              0,
+              0
+            ]
+          },
+          "imbalance": {
+            "value": null,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [],
+            "asks": []
+          }
+        },
+        "issues": [
+          {
+            "code": "missing_orderbook_side",
+            "scope": "orderbook",
+            "detail": "bid or ask levels are absent"
+          }
+        ]
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "missing book side"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_book_depth"
+      }
+    },
+    {
+      "name": "one_side",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2",
+              "n": 1
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": null,
+          "midpoint": null,
+          "spread_absolute": null,
+          "spread_pct_of_mid": null,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 0,
+            "levels_per_side": [
+              1,
+              0
+            ]
+          },
+          "imbalance": {
+            "value": 1.0,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": []
+          }
+        },
+        "issues": [
+          {
+            "code": "missing_orderbook_side",
+            "scope": "orderbook",
+            "detail": "bid or ask levels are absent"
+          }
+        ]
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "book timestamp/sides malformed"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_book_sides"
+      }
+    },
+    {
+      "name": "wrong_sides_type",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": {}
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": null,
+          "best_ask": null,
+          "midpoint": null,
+          "spread_absolute": null,
+          "spread_pct_of_mid": null,
+          "depth": {
+            "bid_total_size": 0,
+            "ask_total_size": 0,
+            "levels_per_side": [
+              0,
+              0
+            ]
+          },
+          "imbalance": {
+            "value": null,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [],
+            "asks": []
+          }
+        },
+        "issues": [
+          {
+            "code": "malformed_response",
+            "scope": "orderbook",
+            "detail": "levels is not a list"
+          },
+          {
+            "code": "missing_orderbook_side",
+            "scope": "orderbook",
+            "detail": "bid or ask levels are absent"
+          }
+        ]
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "book timestamp/sides malformed"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_book_sides"
+      }
+    },
+    {
+      "name": "extra_side",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ],
+          []
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "book timestamp/sides malformed"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_book_sides"
+      }
+    },
+    {
+      "name": "wrong_symbol",
+      "raw": {
+        "coin": "HYPE",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "wrong/malformed book identity"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "unexpected_book_symbol"
+      }
+    },
+    {
+      "name": "string_time",
+      "raw": {
+        "coin": "ETH",
+        "time": "2000000000000",
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 2000000000000,
+          "timestamp_utc": "2033-05-18T03:33:20.000Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "book timestamp/sides malformed"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_integer"
+      }
+    },
+    {
+      "name": "boolean_time",
+      "raw": {
+        "coin": "ETH",
+        "time": true,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1,
+          "timestamp_utc": "1970-01-01T00:00:00.001Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "book timestamp/sides malformed"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_integer"
+      }
+    },
+    {
+      "name": "fractional_time",
+      "raw": {
+        "coin": "ETH",
+        "time": 1.25,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1,
+          "timestamp_utc": "1970-01-01T00:00:00.001Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "book timestamp/sides malformed"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_integer"
+      }
+    },
+    {
+      "name": "missing_time",
+      "raw": {
+        "coin": "ETH",
+        "time": null,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": null,
+          "timestamp_utc": null,
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "book timestamp/sides malformed"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_integer"
+      }
+    },
+    {
+      "name": "invalid_time",
+      "raw": {
+        "coin": "ETH",
+        "time": "bad",
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": null,
+          "timestamp_utc": null,
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": [
+          {
+            "code": "invalid_timestamp",
+            "scope": "orderbook",
+            "detail": "orderbook time is not an integer"
+          }
+        ]
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "book timestamp/sides malformed"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_integer"
+      }
+    },
+    {
+      "name": "future_time",
+      "raw": {
+        "coin": "ETH",
+        "time": 2000000005001,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 2000000005001,
+          "timestamp_utc": "2033-05-18T03:33:25.001Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "value": {
+          "source_timestamp_ms": 2000000005001,
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "l2_midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_bps": 99.50248756218905,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "orderbook_imbalance": -0.2
+        }
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "future_timestamp"
+      }
+    },
+    {
+      "name": "zero_time",
+      "raw": {
+        "coin": "ETH",
+        "time": 0,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 0,
+          "timestamp_utc": "1970-01-01T00:00:00.000Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "value": {
+          "source_timestamp_ms": 0,
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "l2_midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_bps": 99.50248756218905,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "orderbook_imbalance": -0.2
+        }
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_integer"
+      }
+    },
+    {
+      "name": "optional_spread",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ],
+        "spread": "0.0001"
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "value": {
+          "source_timestamp_ms": 1999999999900,
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "l2_midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_bps": 99.50248756218905,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "orderbook_imbalance": -0.2
+        }
+      },
+      "ws": {
+        "value": {
+          "coin": "ETH",
+          "time_ms": 1999999999900,
+          "bids": [
+            [
+              "100",
+              "2",
+              1
+            ]
+          ],
+          "asks": [
+            [
+              "101",
+              "3",
+              2
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "invalid_spread",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ],
+        "spread": "bad"
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "value": {
+          "source_timestamp_ms": 1999999999900,
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "l2_midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_bps": 99.50248756218905,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "orderbook_imbalance": -0.2
+        }
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_decimal"
+      }
+    },
+    {
+      "name": "unknown_field",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ],
+        "extra": 1
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "value": {
+          "source_timestamp_ms": 1999999999900,
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "l2_midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_bps": 99.50248756218905,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "orderbook_imbalance": -0.2
+        }
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_fields"
+      }
+    },
+    {
+      "name": "zero_size",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "0",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -1.0,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 0.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "crossed book or unusable depth"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_decimal"
+      }
+    },
+    {
+      "name": "negative_size",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "-1",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": -1.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -2.0,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": -1.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "invalid level price/size"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_decimal"
+      }
+    },
+    {
+      "name": "invalid_size",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "bad",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -1.0,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": null,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "invalid level price/size"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_decimal"
+      }
+    },
+    {
+      "name": "nan_size",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "NaN",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -1.0,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": null,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "invalid level price/size"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_decimal"
+      }
+    },
+    {
+      "name": "boolean_size",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": true,
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 1.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.5,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 1.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "invalid level price/size"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_decimal"
+      }
+    },
+    {
+      "name": "zero_price",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "0",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 0.0,
+          "best_ask": 101.0,
+          "midpoint": 50.5,
+          "spread_absolute": 101.0,
+          "spread_pct_of_mid": 200.0,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 0.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "invalid level price/size"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_decimal"
+      }
+    },
+    {
+      "name": "negative_price",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "-1",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": -1.0,
+          "best_ask": 101.0,
+          "midpoint": 50.0,
+          "spread_absolute": 102.0,
+          "spread_pct_of_mid": 204.0,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": -1.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "invalid level price/size"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_decimal"
+      }
+    },
+    {
+      "name": "nan_price",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "NaN",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": null,
+          "best_ask": 101.0,
+          "midpoint": null,
+          "spread_absolute": null,
+          "spread_pct_of_mid": null,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": null,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "invalid level price/size"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_decimal"
+      }
+    },
+    {
+      "name": "boolean_price",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": true,
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 1.0,
+          "best_ask": 101.0,
+          "midpoint": 51.0,
+          "spread_absolute": 100.0,
+          "spread_pct_of_mid": 196.078431372549,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 1.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "invalid level price/size"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_decimal"
+      }
+    },
+    {
+      "name": "numeric_price",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": 100,
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "value": {
+          "source_timestamp_ms": 1999999999900,
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "l2_midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_bps": 99.50248756218905,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "orderbook_imbalance": -0.2
+        }
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_decimal"
+      }
+    },
+    {
+      "name": "crossed",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "102",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 102.0,
+          "best_ask": 101.0,
+          "midpoint": 101.5,
+          "spread_absolute": -1.0,
+          "spread_pct_of_mid": -0.9852216748768473,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 102.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "crossed book or unusable depth"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "crossed_or_locked_book"
+      }
+    },
+    {
+      "name": "locked",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "101",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 101.0,
+          "best_ask": 101.0,
+          "midpoint": 101.0,
+          "spread_absolute": 0.0,
+          "spread_pct_of_mid": 0.0,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 101.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "value": {
+          "source_timestamp_ms": 1999999999900,
+          "best_bid": 101.0,
+          "best_ask": 101.0,
+          "l2_midpoint": 101.0,
+          "spread_absolute": 0.0,
+          "spread_bps": 0.0,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "orderbook_imbalance": -0.2
+        }
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "crossed_or_locked_book"
+      }
+    },
+    {
+      "name": "zero_count",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2",
+              "n": 0
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 2.0,
+                "order_count": 0
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "value": {
+          "source_timestamp_ms": 1999999999900,
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "l2_midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_bps": 99.50248756218905,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "orderbook_imbalance": -0.2
+        }
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_integer"
+      }
+    },
+    {
+      "name": "boolean_count",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2",
+              "n": true
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 2.0,
+                "order_count": true
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "value": {
+          "source_timestamp_ms": 1999999999900,
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "l2_midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_bps": 99.50248756218905,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "orderbook_imbalance": -0.2
+        }
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_integer"
+      }
+    },
+    {
+      "name": "huge_price",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "1e33",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 1e+33,
+          "best_ask": 101.0,
+          "midpoint": 5e+32,
+          "spread_absolute": -1e+33,
+          "spread_pct_of_mid": -200.0,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 1e+33,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "crossed book or unusable depth"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_decimal"
+      }
+    },
+    {
+      "name": "repeated",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "100",
+              "sz": "1",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              2,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 100.0,
+                "size": 1.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "value": {
+          "source_timestamp_ms": 1999999999900,
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "l2_midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_bps": 99.50248756218905,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              2,
+              1
+            ]
+          },
+          "orderbook_imbalance": -0.2
+        }
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "unsorted_book"
+      }
+    },
+    {
+      "name": "unsorted",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "99",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "100",
+              "sz": "1",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 99.0,
+          "best_ask": 101.0,
+          "midpoint": 100.0,
+          "spread_absolute": 2.0,
+          "spread_pct_of_mid": 2.0,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              2,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 99.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 100.0,
+                "size": 1.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "unsorted book"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "unsorted_book"
+      }
+    },
+    {
+      "name": "sorted",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "99",
+              "sz": "1",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              2,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 99.0,
+                "size": 1.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "value": {
+          "source_timestamp_ms": 1999999999900,
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "l2_midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_bps": 99.50248756218905,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              2,
+              1
+            ]
+          },
+          "orderbook_imbalance": -0.2
+        }
+      },
+      "ws": {
+        "value": {
+          "coin": "ETH",
+          "time_ms": 1999999999900,
+          "bids": [
+            [
+              "100",
+              "1",
+              1
+            ],
+            [
+              "99",
+              "1",
+              1
+            ]
+          ],
+          "asks": [
+            [
+              "101",
+              "3",
+              2
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "zero_then_positive",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "0",
+              "n": 1
+            },
+            {
+              "px": "99",
+              "sz": "1",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 1.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              2,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.5,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 0.0,
+                "order_count": 1
+              },
+              {
+                "price": 99.0,
+                "size": 1.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "value": {
+          "source_timestamp_ms": 1999999999900,
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "l2_midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_bps": 99.50248756218905,
+          "depth": {
+            "bid_total_size": 1.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              2,
+              1
+            ]
+          },
+          "orderbook_imbalance": -0.5
+        }
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_decimal"
+      }
+    },
+    {
+      "name": "non_object_level",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            null
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": null,
+          "best_ask": 101.0,
+          "midpoint": null,
+          "spread_absolute": null,
+          "spread_pct_of_mid": null,
+          "depth": {
+            "bid_total_size": 0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              0,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -1.0,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": [
+          {
+            "code": "malformed_response",
+            "scope": "orderbook",
+            "detail": "level is not an object"
+          }
+        ]
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "malformed level"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_fields"
+      }
+    },
+    {
+      "name": "too_many_levels",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "99",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "98",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "97",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "96",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "95",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "94",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "93",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "92",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "91",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "90",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "89",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "88",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "87",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "86",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "85",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "84",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "83",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "82",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "81",
+              "sz": "1",
+              "n": 1
+            },
+            {
+              "px": "80",
+              "sz": "1",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 21.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              21,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": 0.75,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 99.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 98.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 97.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 96.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 95.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 94.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 93.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 92.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 91.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 90.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 89.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 88.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 87.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 86.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 85.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 84.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 83.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 82.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 81.0,
+                "size": 1.0,
+                "order_count": 1
+              },
+              {
+                "price": 80.0,
+                "size": 1.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "value": {
+          "source_timestamp_ms": 1999999999900,
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "l2_midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_bps": 99.50248756218905,
+          "depth": {
+            "bid_total_size": 21.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              21,
+              1
+            ]
+          },
+          "orderbook_imbalance": 0.75
+        }
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_book_depth"
+      }
+    },
+    {
+      "name": "missing_coin",
+      "raw": {
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -0.2,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": 2.0,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "value": {
+          "source_timestamp_ms": 1999999999900,
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "l2_midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_bps": 99.50248756218905,
+          "depth": {
+            "bid_total_size": 2.0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "orderbook_imbalance": -0.2
+        }
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_fields"
+      }
+    },
+    {
+      "name": "missing_size",
+      "raw": {
+        "coin": "ETH",
+        "time": 1999999999900,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "n": 1
+            }
+          ],
+          [
+            {
+              "px": "101",
+              "sz": "3",
+              "n": 2
+            }
+          ]
+        ]
+      },
+      "market": {
+        "value": {
+          "timestamp_ms": 1999999999900,
+          "timestamp_utc": "2033-05-18T03:33:19.900Z",
+          "best_bid": 100.0,
+          "best_ask": 101.0,
+          "midpoint": 100.5,
+          "spread_absolute": 1.0,
+          "spread_pct_of_mid": 0.9950248756218906,
+          "depth": {
+            "bid_total_size": 0,
+            "ask_total_size": 3.0,
+            "levels_per_side": [
+              1,
+              1
+            ]
+          },
+          "imbalance": {
+            "value": -1.0,
+            "formula": "(bid_total_size - ask_total_size) / (bid_total_size + ask_total_size)"
+          },
+          "levels": {
+            "bids": [
+              {
+                "price": 100.0,
+                "size": null,
+                "order_count": 1
+              }
+            ],
+            "asks": [
+              {
+                "price": 101.0,
+                "size": 3.0,
+                "order_count": 2
+              }
+            ]
+          }
+        },
+        "issues": []
+      },
+      "revalidation": {
+        "error_type": "ValueError",
+        "error": "invalid level price/size"
+      },
+      "ws": {
+        "error_type": "StreamValidationError",
+        "error": "invalid_fields"
+      }
+    }
+  ],
+  "market_state_checksums": {
+    "normal": "0ea3f15efdfebe8e5a40755e44258d3fc0169ce2fa62ff0f4ab127f9f019b398",
+    "missing": "3b757e885757262ee1af73800a04e4ca1a752cef52a2ac33d726cb1cec7296d3",
+    "null": "d6941e0478bfba7fb35fa9aca9775f3ae554ffa49f3b6c7d2045e6588fba0c77",
+    "funding_missing": "0f8dc349205ef9ff548307325ccf1b2a0d85e63bb719650a062aa191916ccce6",
+    "insufficient": "0b2be5f6002da48f0acfe6b733babc93ac009f3ded030f9af13d21ed3e23ef93",
+    "gap": "84cb1e971a46c4711d29f04c01ef91978518be9864820ef04f51bdd00ca41b75",
+    "open": "0ea3f15efdfebe8e5a40755e44258d3fc0169ce2fa62ff0f4ab127f9f019b398",
+    "old": "1aaaec9a93de7abdfb7e3c74b0277ef72072040e3af22917ad353d529ee530fa",
+    "empty_book": "809a4525d1f8c1bf570c05d616ab2e20d07f523d764620fb7127b6e634ded7a1",
+    "one_side": "5bc5f93d8dd8b815386c7a6b3b8eaedc7ab7300232c6b69af198f9592c094cc0"
+  },
+  "revalidation_checksums": [
+    {
+      "name": "valid",
+      "book": {
+        "coin": "HYPE",
+        "time": 2000000019990,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2"
+            }
+          ],
+          [
+            {
+              "px": "100.01",
+              "sz": "1"
+            }
+          ]
+        ]
+      },
+      "context": {
+        "markPx": "100",
+        "midPx": "100.005",
+        "oraclePx": "100",
+        "premium": "0",
+        "dayNtlVlm": "10000000",
+        "funding": "0.00001",
+        "openInterest": "1234",
+        "impactPxs": [
+          "100",
+          "100.01"
+        ]
+      },
+      "deadline_exceeded": false,
+      "checksum": "5b797d9dd4d5c820d328d3a0f91f8abede76895be60c229a4d80b45786430546",
+      "status": "VALID",
+      "reasons": []
+    },
+    {
+      "name": "locked_repeated_zero_size",
+      "book": {
+        "coin": "HYPE",
+        "time": 2000000019990,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "0"
+            },
+            {
+              "px": "100",
+              "sz": "2"
+            }
+          ],
+          [
+            {
+              "px": "100",
+              "sz": "1"
+            }
+          ]
+        ]
+      },
+      "context": {
+        "markPx": "100",
+        "midPx": "100.005",
+        "oraclePx": "100",
+        "premium": "0",
+        "dayNtlVlm": "10000000",
+        "funding": "0.00001",
+        "openInterest": "1234",
+        "impactPxs": [
+          "100",
+          "100.01"
+        ]
+      },
+      "deadline_exceeded": false,
+      "checksum": "33015416d29e8834de4e191d6f7c1290d0d65f810125b565ddbf4d3b2f08d6de",
+      "status": "VALID",
+      "reasons": []
+    },
+    {
+      "name": "crossed",
+      "book": {
+        "coin": "HYPE",
+        "time": 2000000019990,
+        "levels": [
+          [
+            {
+              "px": "101",
+              "sz": "2"
+            }
+          ],
+          [
+            {
+              "px": "100.01",
+              "sz": "1"
+            }
+          ]
+        ]
+      },
+      "context": {
+        "markPx": "100",
+        "midPx": "100.005",
+        "oraclePx": "100",
+        "premium": "0",
+        "dayNtlVlm": "10000000",
+        "funding": "0.00001",
+        "openInterest": "1234",
+        "impactPxs": [
+          "100",
+          "100.01"
+        ]
+      },
+      "deadline_exceeded": false,
+      "checksum": "52c2ad7742ec4efe1862e1aef29de31474ad2ad3e140df3b9f8ccd2548e65c9c",
+      "status": "INDETERMINATE",
+      "reasons": [
+        {
+          "code": "MALFORMED_L2",
+          "scope": "l2Book",
+          "effect": "INDETERMINATE",
+          "rule_id": null
+        },
+        {
+          "code": "REQUIRED_RULE_UNEVALUABLE",
+          "scope": "orderbook",
+          "effect": "INDETERMINATE",
+          "rule_id": "base_spread"
+        },
+        {
+          "code": "REQUIRED_RULE_UNEVALUABLE",
+          "scope": "l2_midpoint",
+          "effect": "INDETERMINATE",
+          "rule_id": "price_invalidation"
+        }
+      ]
+    },
+    {
+      "name": "unsorted",
+      "book": {
+        "coin": "HYPE",
+        "time": 2000000019990,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2"
+            },
+            {
+              "px": "100.005",
+              "sz": "1"
+            }
+          ],
+          [
+            {
+              "px": "100.01",
+              "sz": "1"
+            }
+          ]
+        ]
+      },
+      "context": {
+        "markPx": "100",
+        "midPx": "100.005",
+        "oraclePx": "100",
+        "premium": "0",
+        "dayNtlVlm": "10000000",
+        "funding": "0.00001",
+        "openInterest": "1234",
+        "impactPxs": [
+          "100",
+          "100.01"
+        ]
+      },
+      "deadline_exceeded": false,
+      "checksum": "52c2ad7742ec4efe1862e1aef29de31474ad2ad3e140df3b9f8ccd2548e65c9c",
+      "status": "INDETERMINATE",
+      "reasons": [
+        {
+          "code": "MALFORMED_L2",
+          "scope": "l2Book",
+          "effect": "INDETERMINATE",
+          "rule_id": null
+        },
+        {
+          "code": "REQUIRED_RULE_UNEVALUABLE",
+          "scope": "orderbook",
+          "effect": "INDETERMINATE",
+          "rule_id": "base_spread"
+        },
+        {
+          "code": "REQUIRED_RULE_UNEVALUABLE",
+          "scope": "l2_midpoint",
+          "effect": "INDETERMINATE",
+          "rule_id": "price_invalidation"
+        }
+      ]
+    },
+    {
+      "name": "overflow_depth",
+      "book": {
+        "coin": "HYPE",
+        "time": 2000000019990,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "1e308"
+            },
+            {
+              "px": "99",
+              "sz": "1e308"
+            }
+          ],
+          [
+            {
+              "px": "100.01",
+              "sz": "1"
+            }
+          ]
+        ]
+      },
+      "context": {
+        "markPx": "100",
+        "midPx": "100.005",
+        "oraclePx": "100",
+        "premium": "0",
+        "dayNtlVlm": "10000000",
+        "funding": "0.00001",
+        "openInterest": "1234",
+        "impactPxs": [
+          "100",
+          "100.01"
+        ]
+      },
+      "deadline_exceeded": false,
+      "checksum": "52c2ad7742ec4efe1862e1aef29de31474ad2ad3e140df3b9f8ccd2548e65c9c",
+      "status": "INDETERMINATE",
+      "reasons": [
+        {
+          "code": "MALFORMED_L2",
+          "scope": "l2Book",
+          "effect": "INDETERMINATE",
+          "rule_id": null
+        },
+        {
+          "code": "REQUIRED_RULE_UNEVALUABLE",
+          "scope": "orderbook",
+          "effect": "INDETERMINATE",
+          "rule_id": "base_spread"
+        },
+        {
+          "code": "REQUIRED_RULE_UNEVALUABLE",
+          "scope": "l2_midpoint",
+          "effect": "INDETERMINATE",
+          "rule_id": "price_invalidation"
+        }
+      ]
+    },
+    {
+      "name": "stale",
+      "book": {
+        "coin": "HYPE",
+        "time": 2000000004999,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2"
+            }
+          ],
+          [
+            {
+              "px": "100.01",
+              "sz": "1"
+            }
+          ]
+        ]
+      },
+      "context": {
+        "markPx": "100",
+        "midPx": "100.005",
+        "oraclePx": "100",
+        "premium": "0",
+        "dayNtlVlm": "10000000",
+        "funding": "0.00001",
+        "openInterest": "1234",
+        "impactPxs": [
+          "100",
+          "100.01"
+        ]
+      },
+      "deadline_exceeded": false,
+      "checksum": "c06da31fc827da96d44c6c384a1a16d6dc5f2107c8df9247373309dd5b8f3a04",
+      "status": "INDETERMINATE",
+      "reasons": [
+        {
+          "code": "L2_STALE",
+          "scope": "orderbook",
+          "effect": "INDETERMINATE",
+          "rule_id": null
+        },
+        {
+          "code": "REQUIRED_RULE_UNEVALUABLE",
+          "scope": "orderbook",
+          "effect": "INDETERMINATE",
+          "rule_id": "base_spread"
+        },
+        {
+          "code": "REQUIRED_RULE_UNEVALUABLE",
+          "scope": "l2_midpoint",
+          "effect": "INDETERMINATE",
+          "rule_id": "price_invalidation"
+        }
+      ]
+    },
+    {
+      "name": "future",
+      "book": {
+        "coin": "HYPE",
+        "time": 2000000025001,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2"
+            }
+          ],
+          [
+            {
+              "px": "100.01",
+              "sz": "1"
+            }
+          ]
+        ]
+      },
+      "context": {
+        "markPx": "100",
+        "midPx": "100.005",
+        "oraclePx": "100",
+        "premium": "0",
+        "dayNtlVlm": "10000000",
+        "funding": "0.00001",
+        "openInterest": "1234",
+        "impactPxs": [
+          "100",
+          "100.01"
+        ]
+      },
+      "deadline_exceeded": false,
+      "checksum": "fd903b63af3fe0425689925d748c52c92eac3e93ff7bfd49c6d92f97a3e40eca",
+      "status": "INDETERMINATE",
+      "reasons": [
+        {
+          "code": "L2_STALE",
+          "scope": "orderbook",
+          "effect": "INDETERMINATE",
+          "rule_id": null
+        },
+        {
+          "code": "REQUIRED_RULE_UNEVALUABLE",
+          "scope": "orderbook",
+          "effect": "INDETERMINATE",
+          "rule_id": "base_spread"
+        },
+        {
+          "code": "REQUIRED_RULE_UNEVALUABLE",
+          "scope": "l2_midpoint",
+          "effect": "INDETERMINATE",
+          "rule_id": "price_invalidation"
+        }
+      ]
+    },
+    {
+      "name": "spread_limit",
+      "book": {
+        "coin": "HYPE",
+        "time": 2000000019990,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2"
+            }
+          ],
+          [
+            {
+              "px": "100.06",
+              "sz": "1"
+            }
+          ]
+        ]
+      },
+      "context": {
+        "markPx": "100",
+        "midPx": "100.005",
+        "oraclePx": "100",
+        "premium": "0",
+        "dayNtlVlm": "10000000",
+        "funding": "0.00001",
+        "openInterest": "1234",
+        "impactPxs": [
+          "100",
+          "100.01"
+        ]
+      },
+      "deadline_exceeded": false,
+      "checksum": "9f8a84031750e49f8783cff4af6c35978df56a558f4351a36be18ca8c0e16af1",
+      "status": "INVALID",
+      "reasons": [
+        {
+          "code": "SPREAD_LIMIT_EXCEEDED",
+          "scope": "orderbook",
+          "effect": "INVALID",
+          "rule_id": "base_spread"
+        }
+      ]
+    },
+    {
+      "name": "liquidity_limit",
+      "book": {
+        "coin": "HYPE",
+        "time": 2000000019990,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2"
+            }
+          ],
+          [
+            {
+              "px": "100.01",
+              "sz": "1"
+            }
+          ]
+        ]
+      },
+      "context": {
+        "markPx": "100",
+        "midPx": "100.005",
+        "oraclePx": "100",
+        "premium": "0",
+        "dayNtlVlm": "9999999",
+        "funding": "0.00001",
+        "openInterest": "1234",
+        "impactPxs": [
+          "100",
+          "100.01"
+        ]
+      },
+      "deadline_exceeded": false,
+      "checksum": "84e987a0a5c9b58407075dfa3af287dd091f3fe23db8872df4aba181b6342b57",
+      "status": "INVALID",
+      "reasons": [
+        {
+          "code": "DAILY_LIQUIDITY_BELOW_MINIMUM",
+          "scope": "market_context",
+          "effect": "INVALID",
+          "rule_id": "base_liquidity"
+        }
+      ]
+    },
+    {
+      "name": "deadline",
+      "book": {
+        "coin": "HYPE",
+        "time": 2000000019990,
+        "levels": [
+          [
+            {
+              "px": "100",
+              "sz": "2"
+            }
+          ],
+          [
+            {
+              "px": "100.01",
+              "sz": "1"
+            }
+          ]
+        ]
+      },
+      "context": {
+        "markPx": "100",
+        "midPx": "100.005",
+        "oraclePx": "100",
+        "premium": "0",
+        "dayNtlVlm": "10000000",
+        "funding": "0.00001",
+        "openInterest": "1234",
+        "impactPxs": [
+          "100",
+          "100.01"
+        ]
+      },
+      "deadline_exceeded": true,
+      "checksum": "61af39aa881d0013044bf0c87240babae1d232edf8e07d77b89e0c3d9e5a8791",
+      "status": "INDETERMINATE",
+      "reasons": [
+        {
+          "code": "DEADLINE_EXCEEDED",
+          "scope": "capture",
+          "effect": "INDETERMINATE",
+          "rule_id": null
+        }
+      ]
+    }
+  ]
+}

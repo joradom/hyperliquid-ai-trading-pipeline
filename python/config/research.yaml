@@ -1,0 +1,29 @@
+# Research only; no accounts, execution settings or trading configuration.
+default_profile: default
+profiles:
+  default:
+    screener:
+      top_n: 50
+      limit: 10
+      sort_by: vol_delta
+      min_volume: 1000000
+      max_workers: 8
+    scanner:
+      min_day_notional_volume_usd: 1000000
+      max_spread_bps: 10
+    ai:
+      providers: [codex]
+      consensus: false
+  experimental:
+    screener:
+      top_n: 50
+      limit: 10
+      sort_by: vol_delta
+      min_volume: 10000000
+      max_workers: 8
+    scanner:
+      min_day_notional_volume_usd: 10000000
+      max_spread_bps: 5
+    ai:
+      providers: [codex, agy]
+      consensus: true

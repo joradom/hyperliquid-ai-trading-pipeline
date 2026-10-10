@@ -1,0 +1,3 @@
+# Optional foreground DOM: public WS transport plus presentation only.
+-r requirements-ws.txt
+rich==15.0.0

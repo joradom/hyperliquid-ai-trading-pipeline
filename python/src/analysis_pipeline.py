@@ -1,4 +1,4 @@
-"""Read-only scanner -> in-memory decision snapshot -> isolated Codex review."""
+"""Read-only scanner -> in-memory snapshot -> configured model review."""
 from __future__ import annotations
 
 import argparse
@@ -14,9 +14,13 @@ from .analysis_response import BASE_RESPONSE_FIELDS, RESPONSE_SCHEMA_PATH, valid
 from .fast_revalidation import DEFAULT_DEADLINE_SECONDS, fast_revalidate, revalidation_failure, validate_deadline
 from .integrity import verify_checksum
 from .scanner import normalize_symbols, scan_symbols
+from .pre_analysis import POLICY
+from .research_config import ResearchConfig, load_config
 
 SCHEMA_VERSION = "1.2"
+EXTENDED_SCHEMA_VERSION = "1.3"
 MODEL = "gpt-6.1-sol"
+AGY_MODEL = "gemini-3.8-flash-low"
 REASONING_EFFORT = "low"
 MAX_CONCURRENT_REVIEWS = 3
 CODEX_TIMEOUT_SECONDS = 180
@@ -108,6 +112,15 @@ def codex_command() -> list[str]:
     return command + [PROMPT]
 
 
+def agy_command(payload: str) -> list[str]:
+    # Agy has no documented equivalent to Codex's complete tool disabling.
+    # Use its supported sandbox/plan mode; never auto-approve tool requests.
+    return ["agy", "--print", PROMPT + "\n\nJSON Data:\n" + payload,
+            "--model", AGY_MODEL, "--output-format", "json",
+            "--json-schema", str(RESPONSE_SCHEMA_PATH), "--sandbox", "--mode", "plan",
+            "--disable-slash-commands"]
+
+
 def _milliseconds(value: str) -> int:
     stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if stamp.tzinfo is None:
@@ -156,7 +169,7 @@ def review_gate(row: dict[str, Any], now_ms: int) -> str | None:
     return None
 
 
-def parse_codex_output(stdout: str) -> dict[str, Any]:
+def parse_codex_output(stdout: str, *, snapshot: dict[str, Any] | None = None) -> dict[str, Any]:
     """Accept only a completed, tool-free JSONL turn and its final JSON message."""
     message = None
     completed = False
@@ -181,7 +194,57 @@ def parse_codex_output(stdout: str) -> dict[str, Any]:
             raise ValueError("unexpected Codex event")
     if not completed or message is None:
         raise ValueError("Codex did not return a completed response")
-    return validate_response(_load_json(message))
+    return validate_response(_load_json(message), snapshot=snapshot)
+
+
+def parse_agy_output(stdout: str, *, snapshot: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Accept a JSON result envelope, never extract JSON from arbitrary prose.
+
+    Supports a whole (possibly pretty-printed) object or JSONL envelopes. Exactly
+    one result is required; duplicate keys, nonfinite values and failed results
+    are rejected before schema and snapshot-provenance validation.
+    """
+    try:
+        envelopes = [_load_json(stdout)]
+    except json.JSONDecodeError:
+        envelopes = [_load_json(line) for line in stdout.splitlines() if line.strip()]
+    wrappers = []
+    for envelope in envelopes:
+        if not isinstance(envelope, dict):
+            raise ValueError("Agy envelope must be an object")
+        if envelope.get("is_error") or envelope.get("error"):
+            raise ValueError("Agy result failed")
+        if "response" in envelope:
+            wrappers.append(envelope)
+    if len(wrappers) != 1:
+        raise ValueError("Agy must return exactly one response")
+    raw = wrappers[0]["response"]
+    response = _load_json(raw) if isinstance(raw, str) else raw
+    return validate_response(response, snapshot=snapshot)
+
+
+def consolidate_responses(codex: dict[str, Any], agy: dict[str, Any]) -> dict[str, Any]:
+    """Existing consensus policy; structured conditions continue to use Codex."""
+    dec_c, dec_a = codex["decision"], agy["decision"]
+    decision = ("NO_TRADE" if "NO_TRADE" in (dec_c, dec_a) else
+                "WATCH" if "WATCH" in (dec_c, dec_a) else
+                dec_c if dec_c == dec_a else "WATCH")
+    return {
+        "response_schema_version": "2.0", "execution_authorized": False,
+        "decision": decision, "confidence": "high" if dec_c == dec_a else "low",
+        "thesis": f"[GPT-6.1-Sol]: {codex['thesis']} | [Gemini-3.8-Flash]: {agy['thesis']}",
+        "entry_conditions": codex["entry_conditions"], "invalidation": codex["invalidation"],
+        "limiting_data": codex["limiting_data"],
+        "compatibility_contract": codex["compatibility_contract"] if decision in ("LONG", "SHORT") else None,
+    }
+
+
+def _failed_response(provider: str) -> dict[str, Any]:
+    # Safe, schema-valid WATCH substitute. It is NOT a validated model response.
+    return {"response_schema_version": "2.0", "execution_authorized": False,
+            "decision": "WATCH", "confidence": "low", "thesis": f"{provider} review failed",
+            "entry_conditions": [], "invalidation": [], "limiting_data": [f"{provider} unavailable or invalid"],
+            "compatibility_contract": None}
 
 
 def _load_json(value: str) -> Any:
@@ -200,7 +263,8 @@ def _load_json(value: str) -> Any:
 def run_pipeline(symbols: Iterable[str], *, scanner: Callable[..., dict[str, Any]] | None = None,
                  runner: Callable[..., Any] | None = None, clock_ms: Callable[[], int] | None = None,
                  timer: Callable[[], float] | None = None, revalidator: Callable[..., dict[str, Any]] | None = None,
-                 revalidation_deadline_seconds: float = DEFAULT_DEADLINE_SECONDS) -> dict[str, Any]:
+                 revalidation_deadline_seconds: float = DEFAULT_DEADLINE_SECONDS,
+                 configuration: ResearchConfig | None = None) -> dict[str, Any]:
     """Scan once; review up to three candidates concurrently with dispatch gates.
 
     No retries, snapshot persistence, model tools or execution integration.
@@ -209,29 +273,39 @@ def run_pipeline(symbols: Iterable[str], *, scanner: Callable[..., dict[str, Any
     still have to pass the freshness gate when a worker becomes available.
     """
     symbols = normalize_symbols(symbols)
+    if configuration is not None and not isinstance(configuration, ResearchConfig):
+        raise ValueError("configuration must be ResearchConfig")
+    settings = configuration or ResearchConfig()
+    expected_policy = {**POLICY, **settings.scanner}
     validate_deadline(revalidation_deadline_seconds)
     clock_ms = clock_ms or (lambda: time.time_ns() // 1_000_000)
     timer = timer or time.perf_counter
     runner = runner or subprocess.run
     revalidator = revalidator or fast_revalidate
     started = timer()
-    scan = (scanner or scan_symbols)(symbols, clock_ms=clock_ms, timer=timer)
+    scan = (scanner or scan_symbols)(symbols, clock_ms=clock_ms, timer=timer,
+                                    **({"configuration": settings} if configuration is not None else {}))
     def review_one(original: dict[str, Any]) -> dict[str, Any]:
         # Do not mutate scanner/pre-analysis/snapshot objects.
         row = dict(original)
-        row["timing"] = dict(original["timing"], codex_exec_seconds=0.0, fast_revalidation_seconds=0.0)
+        row["timing"] = dict(original["timing"], codex_exec_seconds=0.0, fast_revalidation_seconds=0.0,
+                             agy_exec_seconds=0.0, consolidation_seconds=0.0, model_review_seconds=0.0)
         row["fast_revalidation"] = None
+        row["_review_span"] = None
         row["model_review"] = {"status": "not_invoked", "reason": None, "invoked": False,
                                "response": None, "expired_at_completion": None,
                                "requires_revalidation": None, "execution_authorized": False,
-                               "sent_at_utc": None, "completed_at_utc": None}
+                               "sent_at_utc": None, "completed_at_utc": None, "providers": {}}
         stage_started = None
         codex_finished = False
         try:
             reason = review_gate(row, clock_ms())
+            if reason is None and row["pre_analysis"]["policy"] != expected_policy:
+                reason = "scanner_policy_mismatch"
             if reason is None:
                 payload = serialize_decision_snapshot(row["decision_snapshot"])
-                command = codex_command()
+                commands = {name: codex_command() if name == "codex" else agy_command(payload)
+                            for name in settings.providers}
                 # Do all validation/serialization/date parsing BEFORE the last
                 # clock read. No expensive validation between that read and spawn.
                 expiry_ms = _milliseconds(row["decision_snapshot"]["valid_until_utc"])
@@ -243,22 +317,71 @@ def run_pipeline(symbols: Iterable[str], *, scanner: Callable[..., dict[str, Any
                     stage_started = timer()
                     row["model_review"]["invoked"] = True
                     row["model_review"]["sent_at_utc"] = _iso(dispatch_ms)
-                    process = runner(command, input=payload, text=True, encoding="utf-8",
-                                     capture_output=True, cwd=CODEX_CWD, timeout=CODEX_TIMEOUT_SECONDS,
-                                     check=False, shell=False)
-                    if process.returncode:
-                        # Never expose potentially sensitive CLI stderr/auth details.
-                        raise ValueError(f"codex exec exited with code {process.returncode}")
-                    response = parse_codex_output(process.stdout)
-                    validate_response(response, snapshot=row["decision_snapshot"])
+
+                    snapshot = row["decision_snapshot"]
+                    provider_results = {}
+
+                    def invoke(provider):
+                        kwargs = {"text": True, "encoding": "utf-8", "capture_output": True,
+                                  "cwd": CODEX_CWD, "timeout": CODEX_TIMEOUT_SECONDS,
+                                  "check": False, "shell": False}
+                        if provider == "codex":
+                            kwargs["input"] = payload
+                        begin = timer()
+                        try:
+                            proc = runner(commands[provider], **kwargs)
+                            if proc.returncode:
+                                raise ValueError("model process returned nonzero")
+                            parser = parse_codex_output if provider == "codex" else parse_agy_output
+                            response = parser(proc.stdout, snapshot=snapshot)
+                            result = {"status": "completed", "response": response, "error": None}
+                        except (OSError, subprocess.SubprocessError, ValueError, TypeError, KeyError,
+                                AttributeError, OverflowError, RuntimeError) as exc:
+                            # Do not log stdout/stderr, command payloads or CLI auth details.
+                            result = {"status": "error", "response": None,
+                                      "error": {"type": type(exc).__name__, "code": "model_review_failed"}}
+                        finished = timer()
+                        return {**result, "seconds": round(finished - begin, 6),
+                                "_started": begin, "_completed": finished}
+
+                    if len(settings.providers) == 1:
+                        name = settings.providers[0]
+                        provider_results = {name: invoke(name)}
+                    else:
+                        with ThreadPoolExecutor(max_workers=len(settings.providers)) as models:
+                            futures = {name: models.submit(invoke, name) for name in settings.providers}
+                            provider_results = {name: future.result() for name, future in futures.items()}
+                    row["model_review"]["providers"] = provider_results
+                    for name, result in provider_results.items():
+                        row["timing"][f"{name}_exec_seconds"] = result["seconds"]
+                    if settings.consensus:
+                        consolidation_started = timer()
+                        try:
+                            response = consolidate_responses(*[
+                                provider_results[name]["response"] or _failed_response(name)
+                                for name in ("codex", "agy")])
+                            validate_response(response, snapshot=snapshot)
+                        finally:
+                            row["timing"]["consolidation_seconds"] = round(timer() - consolidation_started, 6)
+                    else:
+                        response = provider_results[settings.providers[0]]["response"]
+                        if response is None:
+                            raise ValueError("model review failed validation or invocation")
                     completed_ms = clock_ms()
                     expired = completed_ms > expiry_ms
                     row["model_review"].update(status="completed", response=response,
                         completed_at_utc=_iso(completed_ms),
                         expired_at_completion=expired, requires_revalidation=expired)
-                    row["timing"]["codex_exec_seconds"] = round(timer() - stage_started, 6)
+                    if any(item["status"] == "error" for item in provider_results.values()):
+                        row["status"] = "error"
+                        row["model_review"].update(status="error", reason="model_review_failed")
+                        row["error"] = {"stage": "model_review", "type": "ModelReviewError",
+                                        "message": "one or more model reviews failed validation or invocation"}
+                    review_completed = max(timer(), *(item["_completed"] for item in provider_results.values()))
+                    row["_review_span"] = (stage_started, review_completed)
+                    row["timing"]["model_review_seconds"] = round(review_completed - stage_started, 6)
                     codex_finished = True
-                    if expired and response["decision"] in ("LONG", "SHORT"):
+                    if expired and response is not None and response["decision"] in ("LONG", "SHORT"):
                         revalidation_started = timer()
                         try:
                             row["fast_revalidation"] = revalidator(row, clock_ms=clock_ms,
@@ -267,7 +390,8 @@ def run_pipeline(symbols: Iterable[str], *, scanner: Callable[..., dict[str, Any
                             # Preserve the successful as-of review independently.
                             row["fast_revalidation"] = revalidation_failure(row, "REVALIDATION_ERROR", now_ms=clock_ms())
                         row["timing"]["fast_revalidation_seconds"] = round(timer() - revalidation_started, 6)
-            row["model_review"]["reason"] = reason
+            if row["model_review"]["status"] != "error":
+                row["model_review"]["reason"] = reason
         except (OSError, subprocess.SubprocessError, ValueError, TypeError, KeyError, AttributeError, OverflowError, RuntimeError) as exc:
             row["status"] = "error"
             row["model_review"].update(status="error", reason="model_review_failed")
@@ -276,7 +400,9 @@ def run_pipeline(symbols: Iterable[str], *, scanner: Callable[..., dict[str, Any
                             else "codex exec timed out or failed; no retry"}
         finally:
             if stage_started is not None and not codex_finished:
-                row["timing"]["codex_exec_seconds"] = round(timer() - stage_started, 6)
+                review_completed = max([timer()] + [item["_completed"] for item in row["model_review"]["providers"].values()])
+                row["_review_span"] = (stage_started, review_completed)
+                row["timing"]["model_review_seconds"] = round(review_completed - stage_started, 6)
         return row
 
     # Non-ANALYZE rows never enter the review queue. Store by index so completions
@@ -288,44 +414,72 @@ def run_pipeline(symbols: Iterable[str], *, scanner: Callable[..., dict[str, Any
             candidates.append((index, original))
         else:
             results[index] = review_one(original)
-    review_started = timer()
     if candidates:
         with ThreadPoolExecutor(max_workers=min(MAX_CONCURRENT_REVIEWS, len(candidates))) as pool:
             futures = [(index, pool.submit(review_one, original)) for index, original in candidates]
             for index, future in futures:
                 results[index] = future.result()
-    review_wall_seconds = timer() - review_started
-    invocations = sum(row["model_review"]["invoked"] for row in results)
     errors = sum(row["status"] == "error" for row in results)
-    return {
-        "kind": "analysis_pipeline", "schema_version": SCHEMA_VERSION, "read_only": True,
-        "execution_authorized": False, "model": MODEL, "reasoning_effort": REASONING_EFFORT,
+    provider_invocations = {name: sum(name in row["model_review"]["providers"] for row in results)
+                            for name in settings.providers}
+    codex_results = [row["model_review"]["providers"]["codex"] for row in results
+                     if "codex" in row["model_review"]["providers"]]
+    codex_wall = (max(item["_completed"] for item in codex_results)
+                  - min(item["_started"] for item in codex_results)) if codex_results else 0.0
+    review_spans = [row["_review_span"] for row in results if row["_review_span"] is not None]
+    review_wall = (max(span[1] for span in review_spans) - min(span[0] for span in review_spans)) if review_spans else 0.0
+    report = {
+        "kind": "analysis_pipeline", "schema_version": SCHEMA_VERSION if settings.legacy_output else EXTENDED_SCHEMA_VERSION,
+        "read_only": True, "execution_authorized": False,
+        "model": MODEL if "codex" in settings.providers else AGY_MODEL, "reasoning_effort": REASONING_EFFORT,
         "max_concurrent_reviews": MAX_CONCURRENT_REVIEWS,
         "fast_revalidation_deadline_seconds": revalidation_deadline_seconds,
         "fast_revalidations": sum(row["fast_revalidation"] is not None for row in results),
         "fast_revalidation_seconds_total": round(sum(row["timing"]["fast_revalidation_seconds"] for row in results), 6),
         "status": "failed" if errors == len(results) else "partial_failure" if errors else "ok",
         "symbols": scan["symbols"], "counts": scan["counts"],
-        "codex_invocations": invocations,
+        "codex_invocations": provider_invocations.get("codex", 0),
         "scanner_seconds": scan["total_seconds"],
         "capture_seconds_total": scan["capture_seconds_total"],
         "pre_analysis_seconds_total": scan["pre_analysis_seconds_total"],
         "decision_snapshot_seconds_total": scan["decision_snapshot_seconds_total"],
         "codex_exec_seconds_total": round(sum(row["timing"]["codex_exec_seconds"] for row in results), 6),
-        "codex_review_wall_seconds": round(review_wall_seconds, 6) if invocations else 0.0,
+        "codex_review_wall_seconds": round(codex_wall, 6),
         "total_seconds": round(timer() - started, 6), "results": results,
     }
+    if not settings.legacy_output:
+        report.update(profile=settings.profile, consensus=settings.consensus,
+            models={name: MODEL if name == "codex" else AGY_MODEL for name in settings.providers},
+            provider_invocations=provider_invocations, agy_invocations=provider_invocations.get("agy", 0),
+            agy_exec_seconds_total=round(sum(row["timing"]["agy_exec_seconds"] for row in results), 6),
+            consolidation_seconds_total=round(sum(row["timing"]["consolidation_seconds"] for row in results), 6),
+            model_review_wall_seconds=round(review_wall, 6))
+    for row in results:
+        row.pop("_review_span")
+        for result in row["model_review"]["providers"].values():
+            result.pop("_started")
+            result.pop("_completed")
+        if settings.legacy_output:
+            row["model_review"].pop("providers")
+            for key in ("agy_exec_seconds", "consolidation_seconds", "model_review_seconds"):
+                row["timing"].pop(key)
+    return report
 
 
 def format_report(report: dict[str, Any]) -> str:
     lines = []
     for row in report["results"]:
         review = row["model_review"]
-        invoked = str(review["invoked"]).lower()
+        invoked = str("codex" in review["providers"] if "providers" in review else review["invoked"]).lower()
         revalidation = "n/a" if review["requires_revalidation"] is None else str(review["requires_revalidation"]).lower()
         lines.append(f"{row['symbol']} {row['classification']} | reasons={','.join(row['reasons'])}"
                      f" | codex_invoked={invoked} | codex_exec={row['timing']['codex_exec_seconds']:.3f}s"
                      f" | requires_revalidation={revalidation}")
+        if review.get("providers"):
+            lines.append("  models: " + " | ".join(f"{name}={item['status']} ({item['seconds']:.3f}s)"
+                                                   for name, item in review["providers"].items()))
+            lines.append(f"  consolidation={row['timing']['consolidation_seconds']:.3f}s"
+                         f" | model review wall={row['timing']['model_review_seconds']:.3f}s")
         if review["invoked"] and review["response"] is not None:
             response = review["response"]
             lines.append(f"  {response['decision']} | confidence={response['confidence']} | {response['thesis']}")
@@ -359,15 +513,19 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("symbols", nargs="+")
     parser.add_argument("--json", action="store_true", help="emit one structured report")
+    parser.add_argument("--config", help="research YAML file (default: config/research.yaml)")
+    parser.add_argument("--profile", help="research profile (default: YAML default_profile)")
     parser.add_argument("--revalidation-deadline-seconds", type=float, default=DEFAULT_DEADLINE_SECONDS,
                         help="total read-only fast-revalidation budget (default: 3 seconds)")
     args = parser.parse_args(argv)
     try:
         symbols = normalize_symbols(args.symbols)
         validate_deadline(args.revalidation_deadline_seconds)
+        configuration = load_config(args.config, args.profile)
     except ValueError as exc:
         parser.error(str(exc))
-    report = run_pipeline(symbols, revalidation_deadline_seconds=args.revalidation_deadline_seconds)
+    report = run_pipeline(symbols, revalidation_deadline_seconds=args.revalidation_deadline_seconds,
+                          configuration=configuration)
     print(json.dumps(report, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
           if args.json else format_report(report))
     return 0 if report["status"] == "ok" else 1

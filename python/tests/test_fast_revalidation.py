@@ -3,6 +3,7 @@ import copy
 import json
 import time
 import unittest
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier, Event, Lock
 from types import SimpleNamespace
@@ -21,9 +22,9 @@ import test_analysis_pipeline
 CURRENT = NOW + 20_000
 
 
-def proposal(symbol="HYPE", decision="LONG"):
+def proposal(symbol="HYPE", decision="LONG", configuration=None):
     row = scan_symbols([symbol], market_builder=test_scanner.ScannerTests().market,
-                       clock_ms=lambda: NOW + 1000)["results"][0]
+                       clock_ms=lambda: NOW + 1000, configuration=configuration)["results"][0]
     row["model_review"] = {"status":"completed", "invoked":True, "execution_authorized":False,
                            "requires_revalidation":True, "expired_at_completion":True,
                            "sent_at_utc":_iso(NOW + 1000), "completed_at_utc":_iso(CURRENT),
@@ -58,6 +59,27 @@ class PairClient:
 
 
 class FastRevalidationTests(unittest.TestCase):
+    def test_complete_documents_equal_pre_phase3_checksums_gates_and_errors(self):
+        from src.research_config import load_config
+        # Keep the pending L2 fixtures unchanged: their captured policy was strict.
+        self.row = proposal(configuration=load_config(profile="experimental"))
+        fixture=json.loads((Path(__file__).parent/"fixtures/orderbook_legacy.json").read_text())
+        for case in fixture["revalidation_checksums"]:
+            with self.subTest(name=case["name"]):
+                captured={"symbol":"HYPE","started_at_ms":CURRENT,"completed_at_ms":CURRENT,
+                    "total_seconds":0.25,"deadline_seconds":3.0,"deadline_exceeded":case["deadline_exceeded"],
+                    "sources":{
+                        "l2Book":{"response":CapturedResponse(copy.deepcopy(case["book"]),CURRENT),
+                                  "request_started_at_ms":CURRENT,"duration_seconds":0.1,"error":None},
+                        "metaAndAssetCtxs":{"response":CapturedResponse(({"universe":[{"name":"HYPE"}]},
+                                                [copy.deepcopy(case["context"])]),CURRENT),
+                                             "request_started_at_ms":CURRENT,"duration_seconds":0.2,"error":None}}}
+                doc=evaluate_capture(self.row,captured,as_of_ms=CURRENT)
+                self.assertEqual(doc["status"],case["status"])
+                self.assertEqual(doc["reasons"],case["reasons"])
+                self.assertEqual(doc["integrity"]["checksum"],case["checksum"])
+                self.assertTrue(verify_checksum(doc))
+
     def setUp(self):
         self.row = proposal()
         self.client = PairClient()
@@ -130,8 +152,14 @@ class FastRevalidationTests(unittest.TestCase):
         self.client.book["levels"][1][0]["px"] = "100.01"
         self.client.context["dayNtlVlm"] = "999999"
         self.assert_result(self.run_fast(), "INVALID", "DAILY_LIQUIDITY_BELOW_MINIMUM")
-        self.client.context["dayNtlVlm"] = "1000000"
+        self.client.context["dayNtlVlm"] = str(self.row["decision_snapshot"]["pre_analysis"]["policy"]["min_day_notional_volume_usd"])
         self.assert_result(self.run_fast(), "VALID")
+
+    def test_exact_spread_boundary_and_one_price_increment_outside(self):
+        self.client.book["levels"] = [[{"px":"1999","sz":"2"}],[{"px":"2001","sz":"1"}]]
+        self.assert_result(self.run_fast(), "VALID")
+        self.client.book["levels"][1][0]["px"] = "2001.001"
+        self.assert_result(self.run_fast(), "INVALID", "SPREAD_LIMIT_EXCEEDED")
 
     def test_crossed_malformed_nonfinite_unsorted_and_empty_books(self):
         modes = [[], [[{"px":"100","sz":"2"}]],
@@ -338,7 +366,7 @@ class PipelineRevalidationTests(unittest.TestCase):
             def runner(*args, **kwargs):
                 nonlocal now
                 if decision in {"WATCH","NO_TRADE"}: now=CURRENT
-                return SimpleNamespace(returncode=0,stdout=test_analysis_pipeline.output(response))
+                return SimpleNamespace(returncode=0,stdout=test_analysis_pipeline.model_output(args[0], response))
             revalidator = Mock(side_effect=AssertionError("unexpected recapture"))
             report = run_pipeline(scan["symbols"],scanner=Mock(return_value=scan),runner=runner,
                                   revalidator=revalidator,clock_ms=lambda:now)
@@ -350,20 +378,21 @@ class PipelineRevalidationTests(unittest.TestCase):
 
     def test_revalidation_begins_in_fast_worker_before_other_codex_finishes(self):
         scan = self.scan(("HYPE","ETH"))
-        started, revalidation_began = Barrier(2), Event()
+        started, revalidation_began = Barrier(4), Event()
         now = NOW+1000
         def runner(*args, **kwargs):
             nonlocal now
-            snapshot = json.loads(kwargs["input"])
+            snapshot = test_analysis_pipeline.snapshot_input(args[0], kwargs)
             started.wait(timeout=2)
             now=CURRENT
             if snapshot["symbol"] == "ETH": self.assertTrue(revalidation_began.wait(timeout=2))
-            return SimpleNamespace(returncode=0,stdout=test_analysis_pipeline.output(directional_response(snapshot)))
+            return SimpleNamespace(returncode=0,stdout=test_analysis_pipeline.model_output(args[0], directional_response(snapshot)))
         def revalidator(row, **kwargs):
             if row["symbol"] == "HYPE": revalidation_began.set()
             return fast_revalidate(row,client=PairClient(row["symbol"]),**kwargs)
         report = run_pipeline(scan["symbols"],scanner=Mock(return_value=scan),runner=runner,
-                              revalidator=revalidator,clock_ms=lambda:now)
+                              revalidator=revalidator,clock_ms=lambda:now,
+                              configuration=test_analysis_pipeline.CONSENSUS_CONFIG)
         self.assertEqual(report["fast_revalidations"],2)
         self.assertTrue(all(row["fast_revalidation"]["status"] == "VALID" for row in report["results"]))
         self.assertIn("revalidation=VALID",format_report(report))
@@ -375,7 +404,8 @@ class PipelineRevalidationTests(unittest.TestCase):
         def runner(*args, **kwargs):
             nonlocal now
             now=CURRENT
-            return SimpleNamespace(returncode=0,stdout=test_analysis_pipeline.output(directional_response(json.loads(kwargs["input"]))))
+            snapshot = test_analysis_pipeline.snapshot_input(args[0], kwargs)
+            return SimpleNamespace(returncode=0,stdout=test_analysis_pipeline.model_output(args[0], directional_response(snapshot)))
         # This test exercises one review; avoid shared dispatch clock changes.
         scan=self.scan()
         report=run_pipeline(scan["symbols"],scanner=Mock(return_value=scan),runner=runner,clock_ms=lambda:now,

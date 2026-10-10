@@ -154,7 +154,7 @@ class AnalysisResponseTests(unittest.TestCase):
 
     def test_supported_scalar_predicates_use_matching_units_and_original_values(self):
         cases = [
-            ("spread_lte", "spread_bps", "pre_analysis.policy.max_spread_bps", 10, "pre_analysis_policy"),
+            ("spread_lte", "spread_bps", "pre_analysis.policy.max_spread_bps", self.snapshot["pre_analysis"]["policy"]["max_spread_bps"], "pre_analysis_policy"),
             ("funding_lte", "funding_current", "derivatives.funding.history_72h_max", 0.00004, "explicit_snapshot_level"),
             ("funding_gte", "funding_current", "derivatives.funding.history_72h_min", -0.00002, "explicit_snapshot_level"),
             ("imbalance_gte", "orderbook_imbalance", "orderbook.imbalance.value", self.snapshot["orderbook"]["imbalance"]["value"], "explicit_snapshot_level"),

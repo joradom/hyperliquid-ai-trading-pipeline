@@ -87,7 +87,7 @@ class PreAnalysisTests(unittest.TestCase):
     def test_inclusive_liquidity_volatility_and_activity_boundaries(self):
         for atr in (0.1, 5):
             snapshot = self.snapshot()
-            snapshot["market_context"]["day_notional_volume"] = 1_000_000
+            snapshot["market_context"]["day_notional_volume"] = POLICY["min_day_notional_volume_usd"]
             snapshot["timeframes"]["15m"]["indicators"]["atr_14_pct"] = atr
             self.assertEqual(self.screen(snapshot)["classification"], "ANALYZE")
 
@@ -98,6 +98,36 @@ class PreAnalysisTests(unittest.TestCase):
         self.assertEqual(self.screen(snapshot)["classification"], "ANALYZE")
         snapshot["orderbook"]["best_ask"] = 2001.001
         self.assertEqual(self.screen(snapshot)["classification"], "SKIP")
+
+    def test_current_policy_liquidity_and_relative_volume_just_outside_boundaries(self):
+        snapshot = self.snapshot()
+        snapshot["market_context"]["day_notional_volume"] = POLICY["min_day_notional_volume_usd"] - 1
+        self.assertEqual(self.screen(snapshot)["classification"], "SKIP")
+        snapshot = self.snapshot()
+        for frame in snapshot["timeframes"].values():
+            frame["indicators"]["volume_relative_20"] = POLICY["min_relative_volume"] - 0.000001
+        self.assertEqual(self.screen(snapshot)["classification"], "WATCH")
+
+    def test_each_freshness_boundary_inclusive_and_one_ms_outside(self):
+        from src.market_state import _iso
+        scopes = [("snapshot", POLICY["max_context_capture_age_ms"]),
+                  ("orderbook", POLICY["max_orderbook_age_ms"]),
+                  ("funding", POLICY["max_funding_age_ms"]),
+                  ("context", POLICY["max_context_capture_age_ms"])]
+        from src.pre_analysis import TIMEFRAMES
+        scopes += [(interval, duration * POLICY["ohlcv_age_multiplier"]) for interval, duration in TIMEFRAMES.items()]
+        for scope, tolerance in scopes:
+            for age, expected in ((tolerance, "ANALYZE"), (tolerance + 1, "SKIP"),
+                                  (-POLICY["max_future_skew_ms"], "ANALYZE"),
+                                  (-POLICY["max_future_skew_ms"] - 1, "SKIP")):
+                snapshot = self.snapshot()
+                stamp = _iso(NOW + 1000 - age)
+                if scope == "snapshot": snapshot["timestamp_utc"] = stamp
+                elif scope == "context": snapshot["capture"]["sources"]["market_context_and_prices"]["captured_at_utc"] = stamp
+                elif scope in ("orderbook", "funding"): snapshot["capture"]["sources"][scope]["source_timestamp_utc"] = stamp
+                else: snapshot["timeframes"][scope]["last_close_utc"] = stamp
+                with self.subTest(scope=scope, age=age):
+                    self.assertEqual(self.screen(snapshot)["classification"], expected)
 
     def test_funding_and_each_candle_timestamp_checked_independently(self):
         for scope in ("funding", "5m", "15m", "1h", "4h"):

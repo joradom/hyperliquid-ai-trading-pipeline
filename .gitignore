@@ -1,8 +1,29 @@
 # Configuración local y datos privados de captura.
 /config.local.json
 /data/snapshots/
+/data/order_flow/
+/data/night_guard/
+/python/src/autonomous_night_guard.py
+/docs/components/AUTONOMOUS_NIGHT_GUARD.md
+/scripts/
 
 # Archivos de entorno y copias compiladas.
+# Solo instrucciones propias revisadas; el resto del estado de agentes es local.
+.agents/*
+!.agents/rules/
+.agents/rules/*
+!.agents/rules/trading_guardrails.md
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/r102-hyperliquid-pipeline/
+.agents/skills/r102-hyperliquid-pipeline/*
+!.agents/skills/r102-hyperliquid-pipeline/SKILL.md
+!.agents/skills/r102-hyperliquid-pipeline/references/
+.agents/skills/r102-hyperliquid-pipeline/references/*
+!.agents/skills/r102-hyperliquid-pipeline/references/commands.md
+!.agents/skills/r102-hyperliquid-pipeline/scripts/
+.agents/skills/r102-hyperliquid-pipeline/scripts/*
+!.agents/skills/r102-hyperliquid-pipeline/scripts/run_pipeline.sh
 .venv/
 __pycache__/
 *.py[cod]
@@ -10,3 +31,27 @@ __pycache__/
 .env.*
 !.env.sample
 !.env.example
+
+# Experimento de modelos: ejecuta procesos al importarse, fuera de los tests.
+/python/test_jurado.py
+
+# Datos y estado local, también fuera de python/.
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+*.db-wal
+*.db-shm
+*.log
+logs/
+*.tmp
+*.bak
+config.local.*
+secrets.*
+.codex/
+.gemini/
+.claude/
+.aws/
