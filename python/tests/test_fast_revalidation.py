@@ -111,6 +111,26 @@ class FastRevalidationTests(unittest.TestCase):
         self.assertEqual(doc["valid_until_utc"], _iso(CURRENT - 10 + 15_000))
         self.assert_result(self.run_fast(row=proposal(decision="SHORT")), "VALID")
 
+    def test_real_client_scope_has_one_attempt_per_endpoint_on_429(self):
+        import io
+        import urllib.error
+        from src.hl_client import HyperliquidInfoClient
+        from src.rest_policy import RESTCoordinator
+        from test_rest_policy import Clock
+        clock=Clock(); coordinator=RESTCoordinator(timer=clock,wait=clock.wait)
+        calls=[]
+        def transport(request, **kwargs):
+            kind=json.loads(request.data)["type"]
+            calls.append(kind)
+            raise urllib.error.HTTPError("https://example.test/info",429,"synthetic",{},io.BytesIO(b"limited"))
+        client=HyperliquidInfoClient(coordinator=coordinator,transport=transport,rng=lambda:0)
+        captured=capture_pair("HYPE",client=client,timer=clock,clock_ms=lambda:CURRENT)
+        self.assertLessEqual(len(calls),2)
+        self.assertEqual(len(calls),len(set(calls)))  # no endpoint is retried
+        self.assertTrue(all(source["error"] for source in captured["sources"].values()))
+        self.assertLessEqual(clock.now,3)
+        self.assertEqual(coordinator._inflight,0)
+
     def test_required_entry_failure_and_invalidation_trigger(self):
         extra = rule(rule_id="entry", predicate_type="price_above", field="mark", threshold=103,
                      reference_source={"primary":"timeframes.15m.indicators.ema.21","secondary":None}, purpose="entry")

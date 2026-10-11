@@ -11,6 +11,8 @@ import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from .rest_policy import RESTConfig
+
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "research.yaml"
 SCANNER_KEYS = frozenset(("min_day_notional_volume_usd", "max_spread_bps"))
 SORT_MODES = ("vol_delta", "volume", "oi", "px_change", "momentum")
@@ -58,10 +60,13 @@ class ResearchConfig:
     providers: tuple[str, ...] = ("codex",)
     consensus: bool = False
     screener: ScreenerConfig = field(default_factory=ScreenerConfig)
+    rest: RESTConfig = field(default_factory=RESTConfig)
 
     def __post_init__(self):
         if not isinstance(self.profile, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", self.profile):
             raise ValueError("invalid profile name")
+        if not isinstance(self.rest, RESTConfig):
+            raise ValueError("rest must be RESTConfig")
         validate_thresholds(self.scanner)
         if not isinstance(self.screener, ScreenerConfig):
             raise ValueError("screener must be ScreenerConfig")
@@ -145,8 +150,8 @@ def load_config(path=None, profile=None):
     profiles = {}
     for name, values in document["profiles"].items():
         if (not isinstance(values, dict) or not {"scanner", "ai"} <= set(values)
-                or set(values) - {"scanner", "ai", "screener"}):
-            raise ValueError(f"profile {name} requires scanner and ai, with optional screener")
+                or set(values) - {"scanner", "ai", "screener", "rest"}):
+            raise ValueError(f"profile {name} requires scanner and ai, with optional screener and rest")
         validate_thresholds(values["scanner"])
         ai = values["ai"]
         if not isinstance(ai, dict) or set(ai) != {"providers", "consensus"} or not isinstance(ai["providers"], list):
@@ -154,9 +159,12 @@ def load_config(path=None, profile=None):
         screener = values.get("screener", {})
         if not isinstance(screener, dict) or set(screener) - set(ScreenerConfig().parameters):
             raise ValueError(f"profile {name} has invalid screener fields")
+        rest = values.get("rest", {})
+        if not isinstance(rest, dict) or set(rest) - set(RESTConfig.__dataclass_fields__):
+            raise ValueError(f"profile {name} has invalid rest fields")
         profiles[name] = ResearchConfig(profile=name, **values["scanner"],
                                        providers=tuple(ai["providers"]), consensus=ai["consensus"],
-                                       screener=ScreenerConfig(**screener))
+                                       screener=ScreenerConfig(**screener), rest=RESTConfig(**rest))
     default = document["default_profile"]
     if not isinstance(default, str) or default not in profiles:
         raise ValueError("default_profile must name an existing profile")

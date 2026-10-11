@@ -6,7 +6,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from .hl_client import HyperliquidAPIError, HyperliquidInfoClient
+from .hl_client import HyperliquidAPIError, HyperliquidInfoClient, request_scope_for, reservation_scope_for
+from .market_context import MarketContextProvider
+from .rest_policy import RESTConfig, request_weight
 from .indicators import calculate, contains_only_finite_numbers
 from .integrity import attach_checksum, canonical_checksum_payload, verify_checksum
 from .orderbook import market_state_book
@@ -113,21 +115,39 @@ def validate_snapshot(snapshot: dict[str, Any]) -> list[str]:
     return errors
 
 
-def build_market_state(symbol: str, client: HyperliquidInfoClient | None = None, candle_count: int = DEFAULT_CANDLES,
-                       clock_ms: Callable[[], int] | None = None) -> dict[str, Any]:
+def _capture_market_state(symbol: str, client: HyperliquidInfoClient | None = None, candle_count: int = DEFAULT_CANDLES,
+                       clock_ms: Callable[[], int] | None = None, *,
+                       deadline_seconds: float | None = None, timer: Callable[[], float] | None = None,
+                       context_provider: MarketContextProvider | None = None) -> dict[str, Any]:
     symbol = symbol.upper()
     if not symbol.isalnum(): raise ValueError("symbol must be alphanumeric")
     if candle_count < 1: raise ValueError("candle_count must be positive")
-    client = client or HyperliquidInfoClient(); clock_ms = clock_ms or (lambda: time.time_ns() // 1_000_000)
+    client = client or (context_provider.client if context_provider is not None else HyperliquidInfoClient()); clock_ms = clock_ms or (lambda: time.time_ns() // 1_000_000)
+    if deadline_seconds is None:
+        deadline_seconds = getattr(getattr(client, "coordinator", None), "config", RESTConfig()).capture_deadline_seconds
+    if isinstance(deadline_seconds, bool) or not isinstance(deadline_seconds, (int, float)) or not math.isfinite(deadline_seconds) or deadline_seconds <= 0:
+        raise ValueError("capture deadline must be positive and finite")
+    timer = timer or getattr(client, "timer", time.monotonic)
+    expires = timer() + deadline_seconds
+    def query(call):
+        remaining = expires - timer()
+        if remaining <= 0:
+            raise HyperliquidAPIError("capture deadline exceeded", code="deadline_exceeded")
+        with request_scope_for(client, deadline_seconds=remaining):
+            response = call()
+        if timer() >= expires:
+            raise HyperliquidAPIError("capture deadline exceeded", code="deadline_exceeded")
+        return response
     started = clock_ms(); issues = []
-    market = client.market_context(symbol); asset, context = market.value
+    market = query(lambda: context_provider.market_context(symbol, deadline_seconds=max(0, expires - timer()))) if context_provider is not None else query(lambda: client.market_context(symbol))
+    asset, context = market.value
     context_capture = _capture(market.captured_at_ms, None, started, STALENESS_TOLERANCES_MS["market_context"])
     _mark_freshness(context_capture, issues, "market_context")
     timeframes, timeframe_captures = {}, {}
     for interval, duration in INTERVAL_MS.items():
         scope = f"timeframes.{interval}"
         try:
-            response = client.candles(symbol, interval, started - duration * (candle_count + 3), started)
+            response = query(lambda: client.candles(symbol, interval, started - duration * (candle_count + 3), started))
             candles = _normalize_candles(response.value, duration, started, issues, scope)[-candle_count:]; captured = response.captured_at_ms
         except HyperliquidAPIError as exc:
             candles, captured = [], clock_ms(); _issue(issues, "endpoint_unavailable", scope, str(exc))
@@ -142,12 +162,12 @@ def build_market_state(symbol: str, client: HyperliquidInfoClient | None = None,
                                 "last_close_utc": _iso(source_ms), "latest_candle": candles[-1] if candles else None,
                                 "candles": candles, "indicators": calculate(legacy) if candles else None}
     try:
-        response = client.l2_book(symbol); orderbook = _book(response.value, issues); book_captured = response.captured_at_ms
+        response = query(lambda: client.l2_book(symbol)); orderbook = _book(response.value, issues); book_captured = response.captured_at_ms
     except HyperliquidAPIError as exc:
         _issue(issues, "endpoint_unavailable", "orderbook", str(exc)); orderbook, book_captured = _book({}, issues), clock_ms()
     book_meta = _capture(book_captured, orderbook["timestamp_ms"], started, STALENESS_TOLERANCES_MS["orderbook"]); _mark_freshness(book_meta, issues, "orderbook")
     try:
-        response = client.funding_history(symbol, started - 72 * 3_600_000, started); history, funding_captured = response.value, response.captured_at_ms
+        response = query(lambda: client.funding_history(symbol, started - 72 * 3_600_000, started)); history, funding_captured = response.value, response.captured_at_ms
     except HyperliquidAPIError as exc:
         history, funding_captured = [], clock_ms(); _issue(issues, "endpoint_unavailable", "derivatives.funding_history", str(exc))
     funding_source = None
@@ -178,6 +198,34 @@ def build_market_state(symbol: str, client: HyperliquidInfoClient | None = None,
     snapshot["data_quality"]["validation_errors"] = validate_snapshot(snapshot)
     if snapshot["data_quality"]["validation_errors"]: snapshot["data_quality"]["status"] = "invalid"
     attach_checksum(snapshot); return snapshot
+
+
+def market_capture_weight(candle_count: int = DEFAULT_CANDLES) -> int:
+    """Conservative first-attempt budget, including a possible context refresh."""
+    if candle_count < 1:
+        raise ValueError("candle_count must be positive")
+    return (request_weight({"type": "metaAndAssetCtxs"})
+            + sum(request_weight({"type": "candleSnapshot", "req": {"interval": interval,
+                "startTime": 0, "endTime": duration * (candle_count + 3)}})
+                  for interval, duration in INTERVAL_MS.items())
+            + request_weight({"type": "l2Book"}) + request_weight({"type": "fundingHistory"}))
+
+
+def build_market_state(symbol: str, client: HyperliquidInfoClient | None = None, candle_count: int = DEFAULT_CANDLES,
+                       clock_ms: Callable[[], int] | None = None, *,
+                       deadline_seconds: float | None = None, timer: Callable[[], float] | None = None,
+                       context_provider: MarketContextProvider | None = None) -> dict[str, Any]:
+    """Reserve a complete capture before starting its unchanged deadline."""
+    if not symbol.upper().isalnum():
+        raise ValueError("symbol must be alphanumeric")
+    client = client or (context_provider.client if context_provider is not None else HyperliquidInfoClient())
+    if deadline_seconds is not None and (isinstance(deadline_seconds, bool)
+            or not isinstance(deadline_seconds, (int, float)) or not math.isfinite(deadline_seconds)
+            or deadline_seconds <= 0):
+        raise ValueError("capture deadline must be positive and finite")
+    with reservation_scope_for(client, market_capture_weight(candle_count)):
+        return _capture_market_state(symbol, client, candle_count, clock_ms,
+            deadline_seconds=deadline_seconds, timer=timer, context_provider=context_provider)
 
 
 def save_snapshot(snapshot: dict[str, Any], directory: Path) -> Path:

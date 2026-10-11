@@ -139,6 +139,8 @@ class AnalysisPipelineTests(unittest.TestCase):
         report, runner = self.run_report(scan, clock=lambda: NOW + 120_000)
         runner.assert_not_called()
         self.assertEqual(report["results"][0]["model_review"]["reason"], "snapshot_expired")
+        self.assertEqual(report["status"], "partial_failure")
+        self.assertIn("warning[snapshot_expired]", format_report(report))
 
     def test_expiry_between_initial_check_and_spawn(self):
         scan = self.scan()
@@ -146,6 +148,8 @@ class AnalysisPipelineTests(unittest.TestCase):
         report, runner = self.run_report(scan, clock=clock)
         runner.assert_not_called()
         self.assertEqual(report["results"][0]["model_review"]["reason"], "snapshot_expired")
+        self.assertEqual(report["status"], "partial_failure")
+        self.assertIn("warning[snapshot_expired]", format_report(report))
 
     def test_exact_expiry_boundary_uses_existing_inclusive_validity(self):
         scan = self.scan()

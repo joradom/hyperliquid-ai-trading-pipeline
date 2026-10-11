@@ -17,7 +17,7 @@ from typing import Any, Callable
 
 from .analysis_response import FIELD_PATHS, validate_response
 from .decision_snapshot import validate_decision_snapshot
-from .hl_client import CapturedResponse, HyperliquidInfoClient
+from .hl_client import CapturedResponse, HyperliquidInfoClient, request_scope_for
 from .integrity import attach_checksum, canonical_checksum_payload, verify_checksum
 from .pre_analysis import TIMEFRAMES
 from .orderbook import revalidation_book
@@ -86,13 +86,20 @@ def capture_pair(symbol: str, *, deadline_seconds: float = DEFAULT_DEADLINE_SECO
     def worker(name, call):
         begin, begin_ms = timer(), clock_ms()
         try:
-            response = call()
+            remaining = expires - timer()
+            if remaining <= 0:
+                raise TimeoutError("capture deadline exceeded")
+            with request_scope_for(client, deadline_seconds=remaining, max_attempts=1):
+                response = call()
+            if timer() >= expires:
+                raise TimeoutError("capture deadline exceeded")
             if not isinstance(response, CapturedResponse) or type(response.captured_at_ms) is not int:
                 raise ValueError("missing captured response metadata")
             result = {"response": response, "error": None}
         except Exception as exc:
             # Public Info errors only; do not echo arbitrary exception payloads.
-            timeout = isinstance(exc, TimeoutError) or isinstance(exc.__cause__, TimeoutError)
+            timeout = (isinstance(exc, TimeoutError) or isinstance(exc.__cause__, TimeoutError)
+                       or getattr(exc, "code", None) == "deadline_exceeded")
             result = {"response": None, "error": {"code": "API_TIMEOUT" if timeout else "API_ERROR",
                                                     "type": type(exc).__name__}}
         finally:

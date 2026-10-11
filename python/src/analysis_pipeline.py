@@ -13,9 +13,10 @@ from .decision_snapshot import serialize_decision_snapshot, validate_decision_sn
 from .analysis_response import BASE_RESPONSE_FIELDS, RESPONSE_SCHEMA_PATH, validate_response
 from .fast_revalidation import DEFAULT_DEADLINE_SECONDS, fast_revalidate, revalidation_failure, validate_deadline
 from .integrity import verify_checksum
-from .scanner import normalize_symbols, scan_symbols
+from .scanner import capture_warnings, normalize_symbols, scan_symbols
 from .pre_analysis import POLICY
 from .research_config import ResearchConfig, load_config
+from .review_session import ReviewSession
 
 SCHEMA_VERSION = "1.2"
 EXTENDED_SCHEMA_VERSION = "1.3"
@@ -264,8 +265,15 @@ def run_pipeline(symbols: Iterable[str], *, scanner: Callable[..., dict[str, Any
                  runner: Callable[..., Any] | None = None, clock_ms: Callable[[], int] | None = None,
                  timer: Callable[[], float] | None = None, revalidator: Callable[..., dict[str, Any]] | None = None,
                  revalidation_deadline_seconds: float = DEFAULT_DEADLINE_SECONDS,
-                 configuration: ResearchConfig | None = None) -> dict[str, Any]:
-    """Scan once; review up to three candidates concurrently with dispatch gates.
+                 configuration: ResearchConfig | None = None, incremental: bool | None = None,
+                 max_admitted: int = MAX_CONCURRENT_REVIEWS,
+                 admission_wait: Callable[[float], None] | None = None) -> dict[str, Any]:
+    """Scan once; native scanners hand rows to a bounded review session.
+
+    Reserve capacity before capture, deliver each finished row immediately and
+    keep final index order. Legacy injected scanners retain batch behavior unless
+    incremental=True or supports_incremental_review is explicitly True.
+    max_admitted configures one to three capture/review paths without a backlog.
 
     No retries, snapshot persistence, model tools or execution integration.
     Only expired directional reviews immediately invoke the read-only recapture.
@@ -276,6 +284,14 @@ def run_pipeline(symbols: Iterable[str], *, scanner: Callable[..., dict[str, Any
     if configuration is not None and not isinstance(configuration, ResearchConfig):
         raise ValueError("configuration must be ResearchConfig")
     settings = configuration or ResearchConfig()
+    if incremental is not None and type(incremental) is not bool:
+        raise ValueError("incremental must be bool or None")
+    if type(max_admitted) is not int or not 1 <= max_admitted <= MAX_CONCURRENT_REVIEWS:
+        raise ValueError("max_admitted must be between 1 and 3")
+    if admission_wait is not None and not callable(admission_wait):
+        raise ValueError("admission_wait must be callable")
+    use_incremental = (getattr(scanner or scan_symbols, "supports_incremental_review", False) is True
+                       if incremental is None else incremental)
     expected_policy = {**POLICY, **settings.scanner}
     validate_deadline(revalidation_deadline_seconds)
     clock_ms = clock_ms or (lambda: time.time_ns() // 1_000_000)
@@ -283,8 +299,6 @@ def run_pipeline(symbols: Iterable[str], *, scanner: Callable[..., dict[str, Any
     runner = runner or subprocess.run
     revalidator = revalidator or fast_revalidate
     started = timer()
-    scan = (scanner or scan_symbols)(symbols, clock_ms=clock_ms, timer=timer,
-                                    **({"configuration": settings} if configuration is not None else {}))
     def review_one(original: dict[str, Any]) -> dict[str, Any]:
         # Do not mutate scanner/pre-analysis/snapshot objects.
         row = dict(original)
@@ -405,21 +419,35 @@ def run_pipeline(symbols: Iterable[str], *, scanner: Callable[..., dict[str, Any
                 row["timing"]["model_review_seconds"] = round(review_completed - stage_started, 6)
         return row
 
-    # Non-ANALYZE rows never enter the review queue. Store by index so completions
-    # can arrive in any order without changing the requested symbol order.
-    results = [None] * len(scan["results"])
-    candidates = []
-    for index, original in enumerate(scan["results"]):
-        if original["classification"] == "ANALYZE":
-            candidates.append((index, original))
-        else:
-            results[index] = review_one(original)
-    if candidates:
-        with ThreadPoolExecutor(max_workers=min(MAX_CONCURRENT_REVIEWS, len(candidates))) as pool:
-            futures = [(index, pool.submit(review_one, original)) for index, original in candidates]
-            for index, future in futures:
-                results[index] = future.result()
+    scan_kwargs = {"clock_ms": clock_ms, "timer": timer,
+                   **({"configuration": settings} if configuration is not None else {})}
+    if use_incremental:
+        with ReviewSession(symbols, review_one, capacity=max_admitted,
+                           executor_factory=ThreadPoolExecutor, wait=admission_wait) as session:
+            scan = (scanner or scan_symbols)(symbols, **scan_kwargs,
+                capture_admission=session.admit, on_result=session.deliver)
+            results = session.finish(scan["results"])
+    else:
+        # Legacy injected scanners keep their old arguments and batch behavior.
+        scan = (scanner or scan_symbols)(symbols, **scan_kwargs)
+        # Non-ANALYZE rows never enter the review queue. Store by index so completions
+        # can arrive in any order without changing the requested symbol order.
+        results = [None] * len(scan["results"])
+        candidates = []
+        for index, original in enumerate(scan["results"]):
+            if original["classification"] == "ANALYZE":
+                candidates.append((index, original))
+            else:
+                results[index] = review_one(original)
+        if candidates:
+            with ThreadPoolExecutor(max_workers=min(max_admitted, len(candidates))) as pool:
+                futures = [(index, pool.submit(review_one, original)) for index, original in candidates]
+                for index, future in futures:
+                    results[index] = future.result()
     errors = sum(row["status"] == "error" for row in results)
+    partial = (scan.get("status") == "partial_failure"
+               or any(capture_warnings(row) or row["model_review"]["reason"] == "snapshot_expired"
+                      for row in results))
     provider_invocations = {name: sum(name in row["model_review"]["providers"] for row in results)
                             for name in settings.providers}
     codex_results = [row["model_review"]["providers"]["codex"] for row in results
@@ -432,11 +460,11 @@ def run_pipeline(symbols: Iterable[str], *, scanner: Callable[..., dict[str, Any
         "kind": "analysis_pipeline", "schema_version": SCHEMA_VERSION if settings.legacy_output else EXTENDED_SCHEMA_VERSION,
         "read_only": True, "execution_authorized": False,
         "model": MODEL if "codex" in settings.providers else AGY_MODEL, "reasoning_effort": REASONING_EFFORT,
-        "max_concurrent_reviews": MAX_CONCURRENT_REVIEWS,
+        "max_concurrent_reviews": max_admitted,
         "fast_revalidation_deadline_seconds": revalidation_deadline_seconds,
         "fast_revalidations": sum(row["fast_revalidation"] is not None for row in results),
         "fast_revalidation_seconds_total": round(sum(row["timing"]["fast_revalidation_seconds"] for row in results), 6),
-        "status": "failed" if errors == len(results) else "partial_failure" if errors else "ok",
+        "status": "failed" if errors == len(results) else "partial_failure" if errors or partial else "ok",
         "symbols": scan["symbols"], "counts": scan["counts"],
         "codex_invocations": provider_invocations.get("codex", 0),
         "scanner_seconds": scan["total_seconds"],
@@ -475,6 +503,9 @@ def format_report(report: dict[str, Any]) -> str:
         lines.append(f"{row['symbol']} {row['classification']} | reasons={','.join(row['reasons'])}"
                      f" | codex_invoked={invoked} | codex_exec={row['timing']['codex_exec_seconds']:.3f}s"
                      f" | requires_revalidation={revalidation}")
+        for issue in capture_warnings(row):
+            lines.append(f"  warning[capture_degraded]: {issue['code']} | {issue.get('scope', 'capture')}"
+                         f" | {issue.get('detail', '')}")
         if review.get("providers"):
             lines.append("  models: " + " | ".join(f"{name}={item['status']} ({item['seconds']:.3f}s)"
                                                    for name, item in review["providers"].items()))
@@ -498,6 +529,8 @@ def format_report(report: dict[str, Any]) -> str:
                 lines.append("  warning: snapshot expired during review; historical/as-of only; revalidate before any operational proposal")
         elif review["reason"]:
             lines.append(f"  model_review={review['status']} | {review['reason']}")
+            if review["reason"] == "snapshot_expired":
+                lines.append("  warning[snapshot_expired]: snapshot expired before dispatch; model was not invoked")
         if row["error"]:
             lines.append(f"  error[{row['error']['stage']}]: {row['error']['message']}")
     lines.append(f"Capture sum={report['capture_seconds_total']:.3f}s | pre_analysis sum={report['pre_analysis_seconds_total']:.3f}s"

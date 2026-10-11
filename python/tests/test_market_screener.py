@@ -2,7 +2,7 @@ import io
 import json
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from src.hl_client import CapturedResponse, HyperliquidAPIError
 from src.market_screener import format_table, main, screen_market
@@ -159,7 +159,7 @@ class MarketScreenerTests(unittest.TestCase):
             limit=5,
             clock_ms=lambda: NOW,
         )
-        self.assertEqual(report["status"], "ok")
+        self.assertEqual(report["status"], "partial_failure")
         eth = next(r for r in report["results"] if r["symbol"] == "ETH")
         self.assertIsNotNone(eth["error"])
         self.assertIn("HyperliquidAPIError", eth["error"])
@@ -188,6 +188,163 @@ class MarketScreenerTests(unittest.TestCase):
         fet = next(r for r in report["results"] if r["symbol"] == "FET")
         self.assertIsNone(fet["volume_prev_24h_usd"])
         self.assertIsNone(fet["vol_delta_pct_24h"])
+
+    def test_context_rankings_need_only_one_meta_request(self):
+        expected = {"volume": ["BTC", "ETH", "FET"], "oi": ["BTC", "ETH", "FET"],
+                    "px_change": ["FET", "ETH", "BTC"], "momentum": ["FET", "ETH", "BTC"]}
+        for mode, symbols in expected.items():
+            with self.subTest(mode=mode):
+                client = FakeScreenerClient()
+                client.candles = MagicMock(side_effect=AssertionError("history unnecessary"))
+                client.meta_and_asset_contexts = MagicMock(wraps=client.meta_and_asset_contexts)
+                report = screen_market(client=client, sort_by=mode, clock_ms=lambda: NOW)
+                client.candles.assert_not_called()
+                client.meta_and_asset_contexts.assert_called_once()
+                self.assertEqual(report["symbols"], symbols)
+                self.assertEqual(report["status"], "ok")
+                for row in report["results"]:
+                    self.assertEqual(row["history_status"], "not_requested")
+                    self.assertEqual(row["volume_today_usd"], row["volume_24h_usd"])
+                    self.assertIsNone(row["volume_prev_24h_usd"])
+                    self.assertIsNone(row["vol_delta_pct_24h"])
+                    self.assertIsNone(row["error"])
+
+    def test_delta_history_queries_pool_before_limit(self):
+        client = FakeScreenerClient()
+        client.candles = MagicMock(wraps=client.candles)
+        report = screen_market(client=client, top_n=3, limit=1, clock_ms=lambda: NOW)
+        self.assertEqual(client.candles.call_count, 3)
+        for call in client.candles.call_args_list:
+            self.assertEqual(call.args[1:], ("1h", NOW - 49 * 3600_000, NOW))
+        self.assertEqual(report["symbols"], ["FET"])
+        self.assertEqual(report["results"][0]["history_status"], "available")
+
+    def test_errors_survive_limit(self):
+        report = screen_market(client=FakeScreenerClient(error_symbol="ETH"), limit=1, clock_ms=lambda: NOW)
+        self.assertEqual(report["status"], "partial_failure")
+        self.assertEqual(report["symbols"], ["FET"])
+        self.assertIsNone(report["results"][0]["error"])
+        self.assertEqual([e["symbol"] for e in report["errors"]], ["ETH"])
+
+    def test_all_history_failures_keep_context_results(self):
+        client = FakeScreenerClient()
+        client.candles = MagicMock(side_effect=HyperliquidAPIError("HTTP 429: synthetic"))
+        report = screen_market(client=client, clock_ms=lambda: NOW)
+        self.assertEqual(report["status"], "partial_failure")
+        self.assertEqual(len(report["errors"]), 3)
+        self.assertEqual(report["symbols"], ["BTC", "ETH", "FET"])
+        for row in report["results"]:
+            self.assertEqual(row["history_status"], "error")
+            self.assertGreater(row["volume_24h_usd"], 0)
+            self.assertIsNone(row["vol_delta_pct_24h"])
+
+    def test_absent_history_differs_from_malformed_response(self):
+        report = screen_market(client=FakeScreenerClient(candles_by_symbol={"FET": []}), clock_ms=lambda: NOW)
+        row = next(r for r in report["results"] if r["symbol"] == "FET")
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual(report["errors"], [])
+        self.assertEqual(row["history_status"], "insufficient")
+        self.assertIsNone(row["error"])
+        client = FakeScreenerClient()
+        client.candles = MagicMock(return_value=CapturedResponse({}, NOW))
+        report = screen_market(client=client, clock_ms=lambda: NOW)
+        self.assertEqual(report["status"], "partial_failure")
+        self.assertEqual(len(report["errors"]), 3)
+
+    def test_worker_validation_precedes_network(self):
+        for workers in (0, -1, True, False, 1.5, "2", None):
+            with self.subTest(workers=workers):
+                client = MagicMock()
+                with self.assertRaisesRegex(ValueError, "max_workers"):
+                    screen_market(client=client, max_workers=workers, sort_by="volume")
+                client.meta_and_asset_contexts.assert_not_called()
+        report = screen_market(client=FakeScreenerClient(), max_workers=1, clock_ms=lambda: NOW)
+        self.assertEqual(report["parameters"]["max_workers"], 1)
+
+    def test_partial_cli_preserves_stdout_and_warns_on_stderr(self):
+        report = screen_market(client=FakeScreenerClient(error_symbol="ETH"), limit=1, clock_ms=lambda: NOW)
+        for flags in (["--json"], ["--symbols-only"], []):
+            with self.subTest(flags=flags), patch("src.market_screener.screen_market", return_value=report) as screen:
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with redirect_stdout(stdout), redirect_stderr(stderr):
+                    code = main([*flags, "--max-workers", "2"])
+                self.assertEqual(code, 1)
+                self.assertIn("ETH", stderr.getvalue())
+                self.assertIn("partial", stderr.getvalue())
+                self.assertEqual(screen.call_args.kwargs["max_workers"], 2)
+                if flags == ["--json"]:
+                    self.assertEqual(json.loads(stdout.getvalue()), report)
+                elif flags == ["--symbols-only"]:
+                    self.assertEqual(stdout.getvalue(), "FET\n")
+                else:
+                    self.assertIn("SYMBOL", stdout.getvalue())
+
+    def test_cli_invalid_workers_never_constructs_client(self):
+        with patch("src.market_screener.HyperliquidInfoClient") as client, redirect_stderr(io.StringIO()):
+            self.assertEqual(main(["--max-workers", "0"]), 1)
+        client.assert_not_called()
+
+    def test_screener_waits_for_recoverable_budget_before_http_deadline(self):
+        from src.hl_client import HyperliquidInfoClient
+        from src.rest_policy import RESTConfig, RESTCoordinator
+        from test_rest_policy import Clock
+        from test_hl_client import Response
+        clock=Clock(); calls=[]; fake=FakeScreenerClient()
+        coordinator=RESTCoordinator(RESTConfig(budget=80),timer=clock,wait=clock.wait)
+        def transport(request,**kwargs):
+            payload=json.loads(request.data); calls.append((payload['type'],kwargs['timeout']))
+            value=fake.meta_and_asset_contexts().value if payload['type']=='metaAndAssetCtxs' else fake.candles(
+                payload['req']['coin'],'1h',0,NOW).value
+            return Response(json.dumps(value))
+        client=HyperliquidInfoClient(coordinator=coordinator,transport=transport,clock_ms=lambda:NOW+int(clock.now*1000))
+        report=screen_market(client=client,max_workers=1,clock_ms=lambda:NOW+int(clock.now*1000))
+        self.assertEqual(clock.now,60)
+        self.assertEqual(report['status'],'ok')
+        self.assertEqual(report['errors'],[])
+        self.assertTrue(all(row['vol_delta_pct_24h'] is not None for row in report['results']))
+        self.assertEqual(len(calls),4)
+        self.assertEqual(calls[-1][1],20)
+
+    def test_screener_bound_reports_unsent_metrics_even_after_limit(self):
+        from src.hl_client import HyperliquidInfoClient
+        from src.rest_policy import RESTConfig, RESTCoordinator
+        from test_rest_policy import Clock
+        from test_hl_client import Response
+        clock=Clock(); fake=FakeScreenerClient(); calls=[]
+        coordinator=RESTCoordinator(RESTConfig(budget=80,admission_wait_seconds=20),timer=clock,wait=clock.wait)
+        def transport(request,**kwargs):
+            payload=json.loads(request.data); calls.append(payload['type'])
+            value=fake.meta_and_asset_contexts().value if payload['type']=='metaAndAssetCtxs' else fake.candles(payload['req']['coin'],'1h',0,NOW).value
+            return Response(json.dumps(value))
+        client=HyperliquidInfoClient(coordinator=coordinator,transport=transport,clock_ms=lambda:NOW)
+        report=screen_market(client=client,max_workers=1,limit=1,clock_ms=lambda:NOW)
+        self.assertEqual(report['status'],'partial_failure')
+        self.assertEqual(report['screened_count'],3)
+        self.assertEqual(report['returned_count'],1)
+        self.assertEqual(report['errors'][0]['symbol'],'FET')
+        self.assertIn('admission_wait_exceeded',report['errors'][0]['message'])
+        self.assertEqual(len(calls),3)
+        self.assertLessEqual(clock.now,20)
+
+    def test_initial_context_waits_before_request_when_previous_window_is_full(self):
+        from src.hl_client import HyperliquidInfoClient
+        from src.rest_policy import RESTConfig, RESTCoordinator
+        from test_rest_policy import Clock
+        from test_hl_client import Response
+        clock=Clock(); fake=FakeScreenerClient(); calls=[]
+        coordinator=RESTCoordinator(RESTConfig(budget=80),timer=clock,wait=clock.wait)
+        ticket=coordinator.acquire(80,10); coordinator.release(ticket)
+        def transport(request,**kwargs):
+            payload=json.loads(request.data); calls.append((payload['type'],clock.now,kwargs['timeout']))
+            value=fake.meta_and_asset_contexts().value if payload['type']=='metaAndAssetCtxs' else fake.candles(payload['req']['coin'],'1h',0,NOW).value
+            return Response(json.dumps(value))
+        client=HyperliquidInfoClient(coordinator=coordinator,transport=transport,clock_ms=lambda:NOW+int(clock.now*1000))
+        report=screen_market(client=client,max_workers=1,clock_ms=lambda:NOW+int(clock.now*1000))
+        self.assertEqual(report['status'],'ok')
+        self.assertEqual(report['errors'],[])
+        self.assertEqual(calls[0],('metaAndAssetCtxs',60,20))
+        self.assertEqual(clock.now,120)
+        self.assertEqual(len(calls),4)
 
     def test_format_table(self):
         client = FakeScreenerClient()

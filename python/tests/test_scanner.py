@@ -95,7 +95,30 @@ class ScannerTests(unittest.TestCase):
         self.assertEqual(row["market_quality"]["status"], "degraded")
         self.assertEqual(row["classification"], "SKIP")
         self.assertTrue(any(issue["code"] == "unusable_timestamp" for issue in row["pre_analysis"]["quality"]["blockers"]))
-        self.assertEqual(report["status"], "ok")  # screening SKIP is not an orchestration error
+        self.assertEqual(report["status"], "partial_failure")  # stale data is distinct from legitimate SKIP
+
+    def test_rest_degradation_is_partial_and_cli_keeps_request_reason(self):
+        market=self.market("HYPE")
+        market["data_quality"]["issues"].append({"code":"endpoint_unavailable",
+            "scope":"derivatives.funding_history","detail":"budget_wait_exceeded"})
+        attach_checksum(market)
+        report=self.scan(["HYPE"],lambda _:market)
+        row=report["results"][0]
+        self.assertEqual(report["status"],"partial_failure")
+        self.assertEqual(row["classification"],"SKIP")
+        self.assertIsNone(row["error"])
+        self.assertIn("budget_wait_exceeded",format_report(report))
+        self.assertIn("warning[capture_degraded]",format_report(report))
+        self.assertIn("budget_wait_exceeded",json.dumps(report))
+        with patch("src.scanner.scan_symbols",return_value=report), redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(main(["HYPE","--json"]),1)
+        self.assertEqual(json.loads(out.getvalue()),report)
+
+    def test_legitimate_skip_and_allowed_unknown_freshness_still_ok(self):
+        report=self.scan(["HYPE"],lambda symbol:self.market(symbol,"SKIP"))
+        self.assertEqual(report["status"],"ok")
+        self.assertEqual(report["results"][0]["classification"],"SKIP")
+        self.assertNotIn("warning[capture_degraded]",format_report(report))
 
     def test_evaluation_happens_immediately_per_symbol(self):
         events = []
@@ -195,7 +218,9 @@ class ScannerTests(unittest.TestCase):
              patch("builtins.open", side_effect=AssertionError("file I/O forbidden")), \
              patch("subprocess.run", side_effect=AssertionError("execution forbidden")):
             report = scan_symbols(["HYPE"], clock_ms=lambda: NOW + 1000)
-        builder.assert_called_once_with("HYPE")
+        builder.assert_called_once()
+        self.assertEqual(builder.call_args.args, ("HYPE",))
+        self.assertEqual(builder.call_args.kwargs["deadline_seconds"], 25)
         self.assertEqual(report["results"][0]["classification"], "ANALYZE")
 
     def test_cli_json_stdout_and_exit_codes(self):

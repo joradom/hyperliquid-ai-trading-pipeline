@@ -88,8 +88,14 @@ ni llamadas reales a modelos.
    propios comandos y payload; por defecto se lanza solo Codex. Con consenso se lanzan dos procesos en paralelo (hasta seis procesos para tres candidatos). Cada llamada a subproceso tiene tuberías y contexto
    de sesión independientes. Los resultados conservan el orden de los símbolos
    aunque los procesos terminen en otro orden. Con más de tres candidatos, los
-   siguientes esperan en una cola: si uno caduca antes de obtener un trabajador
-   o durante la preparación, no se envía (`snapshot_expired`). No se vuelve a
+   siguientes esperan antes de capturar. Una sesión creada antes del scanner
+   reserva capacidad para como máximo tres recorridos captura/revisión; cada
+   fila se entrega al terminar preanálisis e instantánea. SKIP/WATCH/errores
+   liberan capacidad sin IA; ANALYZE la conserva hasta terminar revisión y, si
+   corresponde, Fast Revalidation. No existe una cola ilimitada de snapshots.
+   Los scanners inyectados antiguos mantienen la cola de revisión por lote,
+   salvo adhesión expresa al protocolo. Si un snapshot caduca durante la
+   preparación o en el recorrido antiguo, no se envía (`snapshot_expired`). No se vuelve a
    capturar ni se amplía la ventana. Un error, timeout o JSON inválido no cancela
    otras revisiones.
 
@@ -353,8 +359,10 @@ fallos de instalación/proceso; no miden tokens consumidos.
 `capture_seconds_total`, `pre_analysis_seconds_total` y
 `decision_snapshot_seconds_total` son sumas separadas del scanner; las capturas
 concurrentes se solapan, por lo que no deben interpretarse como tiempo real
-transcurrido. `scanner_seconds` es el tiempo real de captura/preanálisis/
-instantánea. `timing.codex_exec_seconds` mide solo el proceso Codex y su validación;
+transcurrido. `scanner_seconds` es el tiempo de ejecución del scanner, incluida
+la espera de admisión antes de capturar. La captura por fila y su deadline
+comienzan después de esa espera. Captura e IA se solapan; los tiempos de scanner
+y revisión no deben sumarse para obtener `total_seconds`. `timing.codex_exec_seconds` mide solo el proceso Codex y su validación;
 su total es la suma entre activos. En 1.3, Agy tiene sus tiempos independientes
 y `consolidation_seconds` mide únicamente consolidación y validación del consenso.
 Las sumas se solapan: **no equivalen al tiempo real transcurrido**.
@@ -390,3 +398,27 @@ caducidad en cola y durante revisión, y revalidación dentro del trabajador sin
 esperar a que terminen otros activos. SKIP/WATCH no invocan ningún modelo.
 Los clocks virtuales prueban el solapamiento de duraciones individuales; el
 tiempo de la revisión del candidato incluye coordinación de ambos procesos.
+
+
+## Protocolo incremental opcional
+
+`scan_symbols` acepta `capture_admission(index, symbol)`, que devuelve un context
+manager, y `on_result(index, row)`. La reserva se adquiere antes de iniciar los
+relojes de captura; el callback ocurre dentro de ella. Analysis transfiere la
+reserva a la revisión y garantiza liberación idempotente ante errores de modelo,
+revalidación, callback o submit. Las filas se almacenan por índice original y
+cada checksum se revisa como máximo una vez. Los objetos de origen no se mutan.
+
+El scanner nativo declara `supports_incremental_review = True`. Un callable
+inyectado conserva sus argumentos antiguos salvo que declare expresamente esa
+capacidad o el caller use `incremental=True`. Aceptar `**kwargs` no activa el
+protocolo. Una adhesión que omita callbacks o altere filas se rechaza.
+`incremental=False` conserva el recorrido anterior para comparación offline.
+`max_admitted=3` admite valores de 1 a 3 mediante API, sin nuevos flags CLI,
+cambios de perfil ni campos JSON adicionales. `admission_wait` permite inyectar
+espera virtual en tests; la espera normal usa una condición, sin polling.
+
+La sesión es local a la ejecución; no persiste ni consulta red. El presupuesto
+REST sigue compartido y Fast Revalidation conserva dos consultas nuevas, un
+intento por endpoint y 3 segundos. Ambos pueden competir con capturas todavía
+en curso: un presupuesto insuficiente sigue siendo indeterminado/degradado.

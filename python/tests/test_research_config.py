@@ -79,6 +79,15 @@ class ResearchConfigTests(unittest.TestCase):
         self.assertEqual(self.load_document(text), ResearchConfig())
         self.assertEqual(self.load_document(text, "experimental").providers, ("agy", "codex"))
 
+    def test_optional_rest_profile_and_old_yaml_defaults(self):
+        from src.rest_policy import RESTConfig
+        text=DEFAULT_CONFIG_PATH.read_text().replace("    screener:","    rest:\n      budget: 600\n      max_inflight: 2\n      context_ttl_seconds: 5\n    screener:")
+        settings=self.load_document(text)
+        self.assertEqual(settings.rest, RESTConfig(budget=600,max_inflight=2,context_ttl_seconds=5))
+        self.assertEqual(load_config().rest,RESTConfig())
+        for bad in ("budget: 1201", "budget: false", "unknown: 1"):
+            with self.assertRaises(ValueError): self.load_document(text.replace("budget: 600",bad))
+
     def test_configuration_is_immutable_and_scanner_values_are_detached(self):
         settings = load_config()
         with self.assertRaises(FrozenInstanceError):

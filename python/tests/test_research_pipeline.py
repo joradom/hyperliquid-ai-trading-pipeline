@@ -121,7 +121,7 @@ class ResearchPipelineTests(unittest.TestCase):
 
     def test_partial_screener_errors_do_not_prevent_capture_or_other_reviews(self):
         report = self.run_case(client=FakeScreenerClient(error_symbol="ETH"))
-        self.assertEqual(report["screener"]["status"], "ok")
+        self.assertEqual(report["screener"]["status"], "partial_failure")
         self.assertEqual(report["status"], "partial_failure")
         self.assertEqual(report["analysis"]["status"], "ok")
         self.assertEqual(report["selection_quality"]["status"], "degraded")
@@ -134,6 +134,82 @@ class ResearchPipelineTests(unittest.TestCase):
         self.assertIn("vol_delta_pct_24h", quality["unavailable_metrics"])
         self.assertTrue(any(issue["code"] == "asset_selection_error" for issue in report["selection_quality"]["issues"]))
         self.assertIn("vol_delta=unavailable", format_report(report))
+
+    def test_default_discovery_and_scanner_share_provider_without_changing_json(self):
+        from src.market_context import MarketContextProvider
+        from test_market_state import FakeClient
+        from test_rest_policy import Clock
+        class CombinedClient(FakeScreenerClient):
+            def __init__(self):
+                super().__init__()
+                self.market=FakeClient()
+                self.meta_and_asset_contexts=Mock(wraps=self.meta_and_asset_contexts)
+            def candles(self,*args): return self.market.candles(*args)
+            def l2_book(self,*args): return self.market.l2_book(*args)
+            def funding_history(self,*args): return self.market.funding_history(*args)
+        clock=Clock(); client=CombinedClient()
+        provider=MarketContextProvider(client,timer=clock,wait=clock.wait,clock_ms=lambda:NOW+1000)
+        report=run_research(sort_by="volume",limit=2,context_provider=provider,
+                            clock_ms=lambda:NOW+1000,runner=Mock(side_effect=successful_runner))
+        client.meta_and_asset_contexts.assert_called_once()
+        self.assertEqual(report["screener"]["status"],"ok")
+        self.assertEqual(report["scanner"]["symbols"],["BTC","ETH"])
+        self.assertTrue(all(row["market_quality"] is not None for row in report["scanner"]["results"]))
+        self.assertFalse(report["execution_authorized"])
+        json.dumps(report,allow_nan=False)
+        self.network.assert_not_called()
+        self.process.assert_not_called()
+
+    def test_capture_degradation_propagates_to_research_json_and_text(self):
+        from src.integrity import attach_checksum
+        def builder(symbol):
+            market=test_scanner.ScannerTests().market(symbol,"SKIP")
+            if symbol=="BTC":
+                market["data_quality"]["issues"].append({"code":"endpoint_unavailable",
+                    "scope":"derivatives.funding_history","detail":"budget_wait_exceeded"})
+                attach_checksum(market)
+            return market
+        def scanner(symbols,**kwargs):
+            return scan_symbols(symbols,market_builder=builder,**kwargs)
+        selection=screen_market(client=FakeScreenerClient(),clock_ms=lambda:NOW)
+        runner=Mock(side_effect=AssertionError("SKIP must not invoke models"))
+        report=run_research(screener=Mock(return_value=selection),scanner=scanner,
+            runner=runner,clock_ms=lambda:NOW+1000)
+        self.assertEqual(report["scanner"]["status"],"partial_failure")
+        self.assertEqual(report["analysis"]["status"],"partial_failure")
+        self.assertEqual(report["status"],"partial_failure")
+        self.assertEqual(report["scanner"]["counts"],{"SKIP":3,"WATCH":0,"ANALYZE":0})
+        self.assertIn("budget_wait_exceeded",format_report(report))
+        self.assertIn("budget_wait_exceeded",json.dumps(report,allow_nan=False))
+        runner.assert_not_called()
+
+    def test_research_keeps_scanner_partial_when_injected_pipeline_reports_ok(self):
+        captured={"status":"partial_failure"}
+        def pipeline(symbols,scanner,**kwargs):
+            scanner(symbols)
+            return {"kind":"analysis_pipeline","schema_version":"1.2","read_only":True,
+                    "execution_authorized":False,"status":"ok"}
+        report=run_research(screener=Mock(return_value=screen_market(client=FakeScreenerClient())),
+                           scanner=Mock(return_value=captured),pipeline=pipeline)
+        self.assertEqual(report["status"],"partial_failure")
+        self.assertEqual(report["analysis"]["status"],"ok")
+
+    def test_context_rankings_do_not_degrade_for_omitted_history(self):
+        for mode in ("volume", "oi", "px_change", "momentum"):
+            with self.subTest(mode=mode):
+                report = self.run_case(sort_by=mode)
+                self.assertEqual(report["status"], "ok")
+                self.assertEqual(report["selection_quality"]["issues"], [])
+                self.scanner.assert_called_once()
+
+    def test_discarded_screener_errors_degrade_research(self):
+        report = self.run_case(client=FakeScreenerClient(error_symbol="ETH"), limit=1)
+        self.assertEqual(report["selected_symbols"], ["FET"])
+        self.assertEqual(report["status"], "partial_failure")
+        self.assertEqual(report["analysis"]["status"], "ok")
+        self.assertEqual(report["selection_quality"]["status"], "degraded")
+        self.assertEqual(report["screener"]["errors"][0]["symbol"], "ETH")
+        self.scanner.assert_called_once()
 
     def test_all_candle_errors_are_partial_if_scanner_and_analysis_succeed(self):
         selection = screen_market(client=FakeScreenerClient(), clock_ms=lambda: NOW)

@@ -73,6 +73,14 @@ Acepta dependencias `screener`, `pipeline`, `scanner`, `runner`, `revalidator`,
 `clock_ms` y `timer`. Cada dependencia recibe los argumentos de la API existente.
 El scanner se inyecta mediante un adaptador que guarda su informe y lo entrega
 al pipeline; nunca se ejecuta un scanner previo seguido de otra captura.
+El adaptador nativo transmite la reserva y los callbacks de la sesión incremental:
+la revisión de cada ANALYZE comienza sin esperar al informe final del scanner.
+Los scanners inyectados solo participan si declaran `supports_incremental_review`
+exactamente `True` o se solicita `incremental=True`. Los callables antiguos
+conservan sus argumentos y comportamiento por lote. Las opciones de API
+`incremental`, `max_admitted` (1 a 3) y `admission_wait` pertenecen al pipeline
+nativo; no se transmiten implícitamente a un pipeline externo inyectado.
+
 
 ## Contrato del informe
 
@@ -94,12 +102,14 @@ son los mismos objetos en memoria. La serialización JSON los representa en
 ambos informes para conservar cada contrato completo. El Market State se usa
 en memoria durante el scanner y no se añade al informe ni se persiste.
 
-Las observaciones del screener no sustituyen el Market State: tiene contexto
-y unas 48 horas de velas horarias, insuficientes para las cuatro temporalidades,
-L2 y funding del scanner. Persisten consultas parcialmente solapadas entre
-descubrimiento y captura; se elimina la duplicación de captura completa del
-scanner. La revalidación REST de una propuesta direccional caducada mantiene
-su comportamiento existente.
+Las observaciones del screener no sustituyen el Market State. Solo `vol_delta`
+consulta histórico: solicita 49 horas y compara dos bloques de 24 velas horarias
+cerradas. `volume`, `oi`, `px_change` y `momentum` usan el contexto; conservan
+`volume_prev_24h_usd` y `vol_delta_pct_24h` como null, con
+`history_status=not_requested` y `volume_today_usd` igual al volumen del contexto.
+El scanner captura sus cuatro temporalidades, L2 y funding; reutiliza el contexto
+solo mientras sea válido. No se duplica una captura completa del scanner.
+La revalidación REST de una propuesta direccional caducada conserva consultas nuevas.
 
 ## Estados y errores
 
@@ -112,14 +122,18 @@ su comportamiento existente.
 - `failed`: excepción/contrato inválido de etapa, descubrimiento fallido,
   ningún símbolo seleccionado compatible, o pipeline con fallo total.
 
-El screener original puede devolver `status=ok` aunque alguna fila tenga
-`error` o delta ausente. Ese informe se conserva y el estado externo refleja
-la degradación. `null` y campos ausentes nunca se consideran métricas válidas.
+El screener nativo devuelve `partial_failure` cuando falla una consulta de velas
+y conserva los errores de todo el pool en `errors`, antes de aplicar `limit`.
+`history_status` distingue histórico disponible, insuficiente, fallido o no
+solicitado. Un screener inyectado antiguo puede devolver `status=ok` con errores
+por fila; Research conserva ese informe y refleja la degradación externa.
+`null` y campos ausentes no se consideran métricas válidas; los campos históricos
+no solicitados son opcionales en los rankings que usan solo contexto.
 Los números NaN/Infinity del descubrimiento se convierten en null únicamente
 en la copia del informe, con una incidencia que identifica su ruta; el objeto
 original no se modifica. Esto permite JSON estricto sin inventar cero.
-Los errores previos al recorte final del ranking que no figuren en el informe
-del screener no están disponibles para el orquestador.
+Los errores del pool descartados por `limit` permanecen en el informe nativo;
+Research propaga su estado parcial aunque las filas seleccionadas sean útiles.
 
 Salida CLI 0 para `ok`; 1 para `partial_failure` o `failed`, con informe JSON
 completo igualmente disponible. Argumentos/configuración inválidos producen
@@ -128,3 +142,14 @@ parcial aunque el comando termine con código 1.
 
 Tests de integración: `test_research_pipeline.py`; configuración:
 `test_research_config.py`. Utilizan mercado y modelos simulados, sin red real.
+
+
+## Presupuesto entre descubrimiento y captura
+
+El recorrido nativo protege el coste estimado de una captura durante el screener
+(163 unidades por defecto). El contexto y las velas de descubrimiento esperan presupuesto antes
+del plazo HTTP, con espera previa de etapa acotada a 180s. Se libera el margen al
+terminar selección. El scanner reserva capacidad de revisión y REST antes de
+construir datos caducables; no cambia frescura, deadlines, ranking ni interfaces
+JSON. Los escenarios grandes pueden necesitar varias ventanas de 60s para
+conservar métricas completas. Ver [Protección REST](REST_PROTECTION.md).

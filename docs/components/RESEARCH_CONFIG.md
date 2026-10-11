@@ -48,8 +48,8 @@ Sin ese argumento usan los valores originales sin leer archivos; para consumir
 YAML desde Python se pasa el resultado de `load_config(path, profile)`. La
 configuración es inmutable y se pasa por llamada: perfiles concurrentes no
 modifican POLICY ni se contaminan. Se externalizan volumen, spread,
-selección de proveedores y parámetros del descubrimiento. Indicadores, confluencia, frescura, REST y
-revalidación conservan sus cálculos. Decision Snapshot mantiene su forma v1.0
+selección de proveedores, parámetros del descubrimiento y protección REST.
+Indicadores, confluencia y límites de frescura conservan sus cálculos. Decision Snapshot mantiene su forma v1.0
 y registra la política efectiva; su validación comprueba que los checks usen
 esos umbrales. El pipeline rechaza una fila cuya política no corresponda a la
 configuración seleccionada.
@@ -91,3 +91,39 @@ flujo completo.
 Tests: `test_research_config.py`, `test_pipeline_profiles.py` y las suites
 existentes de scanner, pipeline, preanálisis, contratos y revalidación. Todos
 simulan red y modelos; no usan cuentas ni operaciones.
+
+
+## Protección REST
+
+Cada perfil admite un bloque opcional `rest`. Los YAML anteriores conservan los
+valores de `RESTConfig`: presupuesto 900/60s, concurrencia HTTP 3, tres intentos,
+espera acumulada de regulación/backoff por petición 10s, deadline de petición
+20s, captura Market State 25s y TTL de contexto 10s. La espera previa de admisión
+REST se limita a 180s; ocurre antes de los deadlines de petición/captura. Todos los campos son
+enteros positivos; se rechazan presupuestos superiores a 1200 y ventanas
+inferiores a 60s. No se amplían las tolerancias de calidad del preanálisis.
+
+Ejemplo del bloque dentro de un perfil existente:
+
+```yaml
+    rest:
+      budget: 900
+      window_seconds: 60
+      max_inflight: 3
+      max_attempts: 3
+      max_wait_seconds: 10
+      admission_wait_seconds: 180
+      request_deadline_seconds: 20
+      capture_deadline_seconds: 25
+      context_ttl_seconds: 10
+      backoff_initial_seconds: 1
+      backoff_max_seconds: 8
+```
+
+La API admite `ResearchConfig(rest=RESTConfig(...))`; el cliente independiente
+admite `rest_config=RESTConfig(...)`. La configuración explícita prevalece sobre
+los defaults. No se añaden flags REST a las CLI en esta fase: `--config` y
+`--profile` siguen seleccionando el perfil. Dos políticas REST incompatibles
+para el mismo servicio dentro de un proceso se rechazan; un cliente nuevo no
+reinicia el presupuesto. La configuración REST no cambia la versión del
+informe ni el proveedor de IA. Detalles: [Protección REST](REST_PROTECTION.md).

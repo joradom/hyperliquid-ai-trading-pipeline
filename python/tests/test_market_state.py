@@ -2,6 +2,8 @@ import copy
 import json
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
+from test_rest_policy import Clock
 
 from src.hl_client import CapturedResponse, HyperliquidAPIError
 from src.market_state import INTERVAL_MS, attach_checksum, build_market_state, verify_checksum
@@ -89,6 +91,62 @@ class MarketStateTests(unittest.TestCase):
         snapshot = self.build()
         self.assertEqual(snapshot["capture"]["sources"]["open_interest"]["freshness"]["status"], "unknown")
         self.assertIn("unknown_freshness", self.codes(snapshot))
+
+    def test_capture_deadline_stops_later_transport_and_preserves_partial_data(self):
+        clock = Clock(); client = FakeClient()
+        original = client.candles
+        def delayed(*args):
+            clock.now += 26
+            return original(*args)
+        client.candles = Mock(side_effect=delayed)
+        client.l2_book = Mock(wraps=client.l2_book)
+        client.funding_history = Mock(wraps=client.funding_history)
+        snapshot = build_market_state("HYPE", client, candle_count=120,
+                                      clock_ms=lambda: NOW, timer=clock)
+        self.assertEqual(client.candles.call_count, 1)
+        client.l2_book.assert_not_called()
+        client.funding_history.assert_not_called()
+        self.assertTrue(verify_checksum(snapshot))
+        self.assertIn("endpoint_unavailable", self.codes(snapshot))
+        self.assertEqual(snapshot["timeframes"]["5m"]["candle_count"], 0)
+        self.assertIsNotNone(snapshot["price"]["mark"])
+
+    def test_invalid_capture_deadline(self):
+        for deadline in (0, -1, True, float("nan"), float("inf")):
+            with self.assertRaises(ValueError):
+                build_market_state("HYPE", FakeClient(), deadline_seconds=deadline)
+
+    def test_shared_context_preserves_timestamp_and_does_not_fetch_per_asset(self):
+        from src.market_context import MarketContextProvider
+        clock=Clock(); client=FakeClient()
+        asset,context=client.market_context("HYPE").value
+        client.meta_and_asset_contexts=Mock(return_value=CapturedResponse(({'universe':[asset]},[context]),NOW))
+        client.market_context=Mock(side_effect=AssertionError("per-asset context forbidden"))
+        provider=MarketContextProvider(client, timer=clock,wait=clock.wait,clock_ms=lambda:NOW+int(clock.now*1000))
+        provider.get(); clock.now=5
+        snapshot=build_market_state("HYPE",client,candle_count=120,context_provider=provider,
+                                    clock_ms=lambda:NOW+5000,timer=clock)
+        client.meta_and_asset_contexts.assert_called_once()
+        client.market_context.assert_not_called()
+        self.assertEqual(snapshot["capture"]["sources"]["market_context_and_prices"]["captured_at_utc"],
+                         "2033-05-18T03:33:20.000Z")
+        self.assertTrue(verify_checksum(snapshot))
+
+    def test_insufficient_capture_budget_rejects_before_any_transport(self):
+        from src.hl_client import HyperliquidInfoClient
+        from src.rest_policy import RESTConfig, RESTCoordinator
+        from test_hl_client import Response
+        clock=Clock(); calls=[]
+        asset,context=FakeClient().market_context("HYPE").value
+        def transport(request,**kwargs):
+            calls.append(json.loads(request.data)["type"])
+            return Response(json.dumps([{'universe':[asset]},[context]]))
+        coordinator=RESTCoordinator(RESTConfig(budget=20),timer=clock,wait=clock.wait)
+        client=HyperliquidInfoClient(coordinator=coordinator,transport=transport,clock_ms=lambda:NOW)
+        with self.assertRaises(HyperliquidAPIError) as caught:
+            build_market_state("HYPE",client,candle_count=120,clock_ms=lambda:NOW,timer=clock)
+        self.assertEqual(caught.exception.code,"request_weight_exceeds_budget")
+        self.assertEqual(calls,[])
 
     def test_endpoint_error_is_recorded(self):
         client = FakeClient()

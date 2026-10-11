@@ -11,9 +11,10 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Iterable
 
 from .decision_snapshot import build_decision_snapshot
-from .hl_client import HyperliquidAPIError
-from .market_state import build_market_state
-from .pre_analysis import POLICY, build_pre_analysis
+from .hl_client import HyperliquidAPIError, reservation_scope_for
+from .market_context import MarketContextProvider
+from .market_state import build_market_state, market_capture_weight
+from .pre_analysis import EXPECTED_UNKNOWN_SCOPES, POLICY, build_pre_analysis
 from .research_config import ResearchConfig, load_config
 
 SCHEMA_VERSION = "1.1"
@@ -40,11 +41,33 @@ def _iso(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
+def capture_warnings(row: dict[str, Any]) -> list[dict[str, Any]]:
+    """Acquisition degradation, excluding explicitly tolerated source warnings.
+
+    Keep reasons in their existing market_quality/pre_analysis JSON locations.
+    Legitimate deterministic SKIP/WATCH classifications are not failures.
+    """
+    quality = row.get("market_quality") or {}
+    issues = [issue for issue in quality.get("issues", [])
+              if not (issue.get("code") == "unknown_freshness"
+                      and issue.get("scope") in EXPECTED_UNKNOWN_SCOPES)]
+    if quality.get("validation_errors") or quality.get("status") == "invalid":
+        issues.append({"code": "source_validation_errors", "scope": "data_quality",
+                       "detail": "capture failed data validation"})
+    for issue in (row.get("pre_analysis") or {}).get("quality", {}).get("blockers", []):
+        if issue.get("code") == "unusable_timestamp":
+            issues.append(issue)
+    return issues
+
+
 def scan_symbols(symbols: Iterable[str], *,
                  market_builder: Callable[[str], dict[str, Any]] | None = None,
                  clock_ms: Callable[[], int] | None = None,
                  timer: Callable[[], float] | None = None,
-                 configuration: ResearchConfig | None = None) -> dict[str, Any]:
+                 configuration: ResearchConfig | None = None,
+                 context_provider: MarketContextProvider | None = None,
+                 capture_admission: Callable[..., Any] | None = None,
+                 on_result: Callable[[int, dict[str, Any]], None] | None = None) -> dict[str, Any]:
     """Capture up to three symbols concurrently; screen each on its worker.
 
     ANALYZE rows immediately build a decision snapshot at the same evaluation
@@ -55,13 +78,23 @@ def scan_symbols(symbols: Iterable[str], *,
     symbols = normalize_symbols(symbols)
     if configuration is not None and not isinstance(configuration, ResearchConfig):
         raise ValueError("configuration must be ResearchConfig")
+    if capture_admission is not None and not callable(capture_admission):
+        raise ValueError("capture_admission must be callable")
+    if on_result is not None and not callable(on_result):
+        raise ValueError("on_result must be callable")
     policy_kwargs = {"policy": {**POLICY, **configuration.scanner}} if configuration is not None else {}
-    market_builder = market_builder or build_market_state
+    reserve_rest = None
+    if market_builder is None:
+        settings = configuration or ResearchConfig()
+        provider = context_provider or MarketContextProvider(rest_config=settings.rest)
+        reserve_rest = lambda: reservation_scope_for(provider.client, market_capture_weight())
+        market_builder = lambda symbol: build_market_state(symbol, context_provider=provider,
+            deadline_seconds=settings.rest.capture_deadline_seconds, clock_ms=clock_ms)
     clock_ms = clock_ms or (lambda: time.time_ns() // 1_000_000)
     timer = timer or time.perf_counter
     started = timer()
     started_at = _iso(clock_ms())
-    def scan_one(symbol: str) -> dict[str, Any]:
+    def capture_one(symbol: str) -> dict[str, Any]:
         row_started = timer()
         capture_seconds = pre_seconds = decision_seconds = 0.0
         stage = "capture"
@@ -108,16 +141,69 @@ def scan_symbols(symbols: Iterable[str], *,
                        "total_seconds": round(timer() - row_started, 6)},
             "error": error,
         }
+    def scan_one(index_symbol):
+        index, symbol = index_symbol
+        row = None
+        def capture_and_deliver():
+            nonlocal row
+            if reserve_rest is None:
+                row = capture_one(symbol)
+            else:
+                admission_started = timer()
+                try:
+                    with reserve_rest():
+                        row = capture_one(symbol)
+                except HyperliquidAPIError as exc:
+                    # Deliver rejection while the review lease is still owned;
+                    # otherwise an incremental consumer would lose this row.
+                    row = {"symbol": symbol, "status": "error", "classification": "SKIP",
+                           "reasons": ["capture_admission_failed"], "market_timestamp_utc": None,
+                           "market_quality": None, "pre_analysis": None, "decision_snapshot": None,
+                           "timing": {"capture_seconds": 0.0, "pre_analysis_seconds": 0.0,
+                                      "decision_snapshot_seconds": 0.0,
+                                      "total_seconds": round(timer() - admission_started, 6)},
+                           "error": {"stage": "capture_admission", "type": type(exc).__name__,
+                                     "message": "capture admission failed: " + exc.code}}
+            if on_result is not None:
+                try:
+                    on_result(index, row)
+                except Exception as exc:
+                    row["status"] = "error"
+                    row["error"] = {"stage": "review_handoff", "type": type(exc).__name__,
+                                    "message": "incremental review handoff failed"}
+            return row
+        if capture_admission is None and reserve_rest is None:
+            return capture_and_deliver()
+        waiting_started = timer()
+        try:
+            # Waiting for review capacity precedes capture clocks and deadline.
+            if capture_admission is None:
+                return capture_and_deliver()
+            with capture_admission(index, symbol):
+                return capture_and_deliver()
+        except Exception as exc:
+            if row is not None:
+                row["status"] = "error"
+                row["error"] = {"stage": "capture_admission", "type": type(exc).__name__, "message": ("capture admission failed: " + exc.code) if isinstance(exc, HyperliquidAPIError) else "capture admission failed"}
+                return row
+            return {"symbol": symbol, "status": "error", "classification": "SKIP",
+                    "reasons": ["capture_admission_failed"], "market_timestamp_utc": None,
+                    "market_quality": None, "pre_analysis": None, "decision_snapshot": None,
+                    "timing": {"capture_seconds": 0.0, "pre_analysis_seconds": 0.0,
+                               "decision_snapshot_seconds": 0.0, "total_seconds": round(timer() - waiting_started, 6)},
+                    "error": {"stage": "capture_admission", "type": type(exc).__name__, "message": ("capture admission failed: " + exc.code) if isinstance(exc, HyperliquidAPIError) else "capture admission failed"}}
+
     # Each worker owns its market and evaluates it immediately after capture.
     # map yields in input order, even if captures finish in another order.
     with ThreadPoolExecutor(max_workers=min(MAX_CONCURRENT_CAPTURES, len(symbols))) as pool:
-        results = list(pool.map(scan_one, symbols))
+        results = list(pool.map(scan_one, enumerate(symbols)))
     completed_at = _iso(clock_ms())
     total_seconds = timer() - started
     errors = sum(row["status"] == "error" for row in results)
+    degraded = any(capture_warnings(row) for row in results)
     return {
         "kind": "scanner", "schema_version": SCHEMA_VERSION, "read_only": True,
-        "status": "failed" if errors == len(results) else "partial_failure" if errors else "ok",
+        "status": "failed" if errors == len(results) else "partial_failure" if errors or degraded else "ok",
         "started_at_utc": started_at, "completed_at_utc": completed_at,
         "total_seconds": round(total_seconds, 6),
         "capture_seconds_total": round(sum(row["timing"]["capture_seconds"] for row in results), 6),
@@ -129,6 +215,10 @@ def scan_symbols(symbols: Iterable[str], *,
     }
 
 
+# Explicit capability; mocks/legacy callables do not opt in by accepting **kwargs.
+scan_symbols.supports_incremental_review = True
+
+
 def format_report(report: dict[str, Any]) -> str:
     lines = []
     for row in report["results"]:
@@ -138,6 +228,9 @@ def format_report(report: dict[str, Any]) -> str:
                      f" | capture={timing['capture_seconds']:.3f}s pre={timing['pre_analysis_seconds']:.3f}s"
                      f" | decision={timing['decision_snapshot_seconds']:.3f}s"
                      f" | decision_snapshot={'ready' if row['decision_snapshot'] is not None else 'none'}")
+        for issue in capture_warnings(row):
+            lines.append(f"  warning[capture_degraded]: {issue['code']} | {issue.get('scope', 'capture')}"
+                         f" | {issue.get('detail', '')}")
         if row["error"]:
             error = row["error"]
             lines.append(f"  error[{error['stage']}]: {error['type']}: {error['message']}")

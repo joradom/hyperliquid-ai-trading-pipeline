@@ -12,6 +12,8 @@ from typing import Any, Callable
 from .analysis_pipeline import format_report as format_analysis, run_pipeline
 from .fast_revalidation import DEFAULT_DEADLINE_SECONDS, validate_deadline
 from .market_screener import screen_market
+from .market_context import MarketContextProvider
+from .market_state import market_capture_weight
 from .research_config import ResearchConfig, SORT_MODES, load_config
 from .scanner import normalize_symbols, scan_symbols
 
@@ -60,7 +62,12 @@ def _selection_quality(report, issues):
     runnable, quality = [], []
     for rank, row in enumerate(rows, 1):
         symbol = row["symbol"]
-        unavailable = [key for key in SELECTION_METRICS if not _finite(row.get(key))]
+        optional_history = ("volume_prev_24h_usd", "vol_delta_pct_24h") if (
+            report.get("parameters", {}).get("sort_by") in ("volume", "oi", "px_change", "momentum")
+            and row.get("history_status") == "not_requested" and not row.get("error")
+        ) else ()
+        unavailable = [key for key in SELECTION_METRICS
+                       if key not in optional_history and not _finite(row.get(key))]
         if row.get("error"):
             issues.append({"stage": "screener", "code": "asset_selection_error", "rank": rank,
                            "symbol": symbol, "detail": row["error"]})
@@ -91,7 +98,10 @@ def run_research(*, configuration: ResearchConfig | None = None,
                  scanner: Callable[..., dict[str, Any]] | None = None,
                  runner: Callable[..., Any] | None = None, revalidator: Callable[..., dict[str, Any]] | None = None,
                  clock_ms: Callable[[], int] | None = None, timer: Callable[[], float] | None = None,
-                 revalidation_deadline_seconds: float = DEFAULT_DEADLINE_SECONDS) -> dict[str, Any]:
+                 revalidation_deadline_seconds: float = DEFAULT_DEADLINE_SECONDS,
+                 context_provider: MarketContextProvider | None = None,
+                 incremental: bool | None = None, max_admitted: int | None = None,
+                 admission_wait: Callable[[float], None] | None = None) -> dict[str, Any]:
     """Overrides > selected profile > defaults; APIs do not read configuration files.
 
     The existing analysis pipeline invokes capture_scan once and owns all gates,
@@ -105,6 +115,14 @@ def run_research(*, configuration: ResearchConfig | None = None,
     overrides = {name: value for name, value in (
         ("top_n", top_n), ("limit", limit), ("sort_by", sort_by),
         ("min_volume", min_volume), ("max_workers", max_workers)) if value is not None}
+    if incremental is not None and type(incremental) is not bool:
+        raise ValueError("incremental must be bool or None")
+    if max_admitted is not None and (type(max_admitted) is not int or not 1 <= max_admitted <= 3):
+        raise ValueError("max_admitted must be between 1 and 3")
+    if admission_wait is not None and not callable(admission_wait):
+        raise ValueError("admission_wait must be callable")
+    if pipeline is not None and (incremental is not None or max_admitted is not None or admission_wait is not None):
+        raise ValueError("incremental options require the native analysis pipeline")
     parameters = replace(settings.screener, **overrides).parameters
     validate_deadline(revalidation_deadline_seconds)
     clock_ms = clock_ms or (lambda: time.time_ns() // 1_000_000)
@@ -121,15 +139,22 @@ def run_research(*, configuration: ResearchConfig | None = None,
     stage = "screener"
     stage_started = timer()
 
+    provider = context_provider or MarketContextProvider(rest_config=settings.rest)
+
     def capture_scan(symbols, **kwargs):
         if report["scanner"] is not None:
             raise ValueError("research pipeline must invoke scanner only once")
+        if scanner is None:
+            kwargs["context_provider"] = provider
         captured = (scanner or scan_symbols)(symbols, **kwargs)
         report["scanner"] = captured
         return captured
 
     try:
-        selection = (screener or screen_market)(**parameters, clock_ms=clock_ms, timer=timer)
+        selection = (screener or screen_market)(**parameters, clock_ms=clock_ms, timer=timer,
+            **({"context_provider": provider,
+                "scanner_headroom": market_capture_weight() if scanner is None and pipeline is None else 0}
+               if screener is None else {}))
         report["screener"] = _json_safe(selection, issues)
         runnable, quality = _selection_quality(report["screener"], issues)
         report["selected_symbols"] = list(report["screener"]["symbols"])
@@ -146,6 +171,14 @@ def run_research(*, configuration: ResearchConfig | None = None,
             stage = "analysis_pipeline"
             stage_started = timer()
             optional = {name: value for name, value in (("runner", runner), ("revalidator", revalidator)) if value is not None}
+            if pipeline is None:
+                if incremental is not None or (
+                        getattr(scanner or scan_symbols, "supports_incremental_review", False) is True):
+                    optional["incremental"] = incremental if incremental is not None else True
+                if max_admitted is not None:
+                    optional["max_admitted"] = max_admitted
+                if admission_wait is not None:
+                    optional["admission_wait"] = admission_wait
             analysis = (pipeline or run_pipeline)(runnable, configuration=settings, scanner=capture_scan,
                 clock_ms=clock_ms, timer=timer, revalidation_deadline_seconds=revalidation_deadline_seconds, **optional)
             report["analysis"] = analysis
@@ -157,7 +190,8 @@ def run_research(*, configuration: ResearchConfig | None = None,
             report["status"] = analysis["status"]
             report["outcome"] = "analysis_failed" if analysis["status"] == "failed" else "completed"
             report["timing"]["analysis_pipeline_seconds"] = round(timer() - stage_started, 6)
-        if report["status"] == "ok" and (issues or report["screener"]["status"] == "partial_failure"):
+        if report["status"] == "ok" and (issues or report["screener"]["status"] == "partial_failure"
+                or (report["scanner"] is not None and report["scanner"].get("status") == "partial_failure")):
             report["status"] = "partial_failure"
     except Exception as exc:
         report["status"] = "failed"
