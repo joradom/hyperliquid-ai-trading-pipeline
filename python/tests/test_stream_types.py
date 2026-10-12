@@ -43,7 +43,7 @@ class StreamTypesTests(unittest.TestCase):
         self.assertEqual(original, before)
         self.assertNotIn("users", result.__dict__)
         self.assertNotIn("hash", result.__dict__)
-        self.assertEqual(SIDE_SEMANTICS, "unverified")
+        self.assertEqual(SIDE_SEMANTICS, "documented_hyperliquid_aggressor")
         self.assertEqual(result, self.parse(packet("trades", [trade(px="101.000")])).data[0])
 
     def test_books_are_immutable_snapshots_and_preserve_native_units(self):

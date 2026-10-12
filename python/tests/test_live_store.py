@@ -17,8 +17,8 @@ class LiveStoreTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.journal=FlowStore(Path(self.temp.name)/"flow.sqlite3");self.addCleanup(self.journal.close)
-    def fake(self):
-        client=PublicWSClient(("ETH","HYPE"),clock_ms=lambda:START+1000)
+    def fake(self,network="mainnet"):
+        client=PublicWSClient(("ETH","HYPE"),clock_ms=lambda:START+1000,network=network)
         client.connection_epoch=1;client.connected_at_ms=START
         client.pending={sub:100 for sub in client.desired}
         for sub in client.desired:client.handle_message(ack(sub))
@@ -228,13 +228,12 @@ class LiveStoreTests(unittest.TestCase):
             self.assertEqual(view["counts"]["closed_trades"], 181)
             self.assertEqual(view["gap_reasons"], {})
             self.assertEqual(view["memory"]["pending"], 0)
-            self.assertEqual(view["side_semantics"], "unverified")
-            self.assertIsNone(view["cvd"]["base"])
+            self.assertEqual(view["side_semantics"], "documented_hyperliquid_aggressor")
+            self.assertEqual(view["cvd"]["base"], "181")
             for window in view["windows"].values():
                 self.assertTrue(window["ready"])
-                self.assertFalse(window["signed_available"])
-                self.assertIsNone(window["delta_base"])
-                self.assertIsNone(window["buy_volume_base"])
+                self.assertTrue(window["signed_available"])
+                self.assertEqual(window["delta_base"], window["buy_volume_base"])
             self.assertEqual(set(first), set(view))
         self.assertTrue(recovery_check(self.journal, live.engine)["state_matches"])
         state = {coin: live.engine.export_asset("mainnet", coin, include_seen=False)
@@ -316,3 +315,77 @@ class LiveStoreTests(unittest.TestCase):
         self.assertEqual(view["observed_total"], before)
         self.assertEqual(view["gap_reasons"]["late_trade"], 2)
         self.assertTrue(recovery_check(self.journal, live.engine)["state_matches"])
+
+    def test_live_signed_mainnet_and_testnet_reuse_engine_without_l2_side_inference(self):
+        live=LiveStore(self.journal)
+        for network in ("mainnet","testnet"):
+            client=self.fake(network);live.sync_ws(client,now_ms=START+1000)
+            client.handle_message(packet("trades",[
+                trade(tid=1,time_ms=START+1000,side="B",px="10",sz="3"),
+                trade(tid=2,time_ms=START+2000,side="A",px="20",sz="1")]))
+            client.clock_ms=lambda:START+63000
+            client.handle_message(packet("l2Book",book(time_ms=START+63000,bid="90",ask="91")))
+            live.sync_ws(client,now_ms=START+63000)
+            view=live.read(network,"ETH")
+            self.assertEqual(view["network"],network)
+            self.assertEqual(view["side_semantics"],"documented_hyperliquid_aggressor")
+            self.assertEqual(view["side_semantics_version"],"1.0")
+            self.assertEqual(view["calculation_version"],"2.0")
+            self.assertEqual(view["windows"]["1m"]["delta_base"],"2")
+            self.assertEqual(view["windows"]["1m"]["delta_quote"],"1e1")
+            self.assertEqual(view["cvd"]["base"],"2")
+            self.assertFalse(view["windows"]["5m"]["signed_available"])
+            self.assertIsNone(view["windows"]["5m"]["delta_base"])
+            self.assertFalse(view["execution_authorized"])
+            with self.assertRaises(TypeError):view["windows"]["1m"]["delta_base"]="999"
+            client.clock_ms=lambda:START+64000
+            client.handle_message(packet("trades",[trade(tid=1,time_ms=START+1000,side="B",px="10",sz="3")]))
+            live.sync_ws(client,now_ms=START+64000)
+            after=live.read(network,"ETH")
+            self.assertEqual(after["cvd"]["base"],"2")
+            self.assertEqual(after["observed_total"]["unique_trades"],2)
+            self.assertTrue(recovery_check(self.journal,live.engine)["state_matches"])
+
+    def test_recovered_assets_of_other_network_never_become_live_implicitly(self):
+        client,live,clock=self.timed_live()
+        self.send_at(client,live,clock,1,[trade(tid=1,time_ms=START+1000)])
+        recovered=LiveStore(self.journal)
+        other=self.fake("testnet")
+        recovered.sync_ws(other,now_ms=START+1000)
+        old=recovered.read("mainnet","ETH")
+        self.assertTrue(old["recovered_not_live"])
+        self.assertFalse(old["connection"]["fresh"])
+        self.assertFalse(old["cvd"]["available"])
+        self.assertIsNone(old["cvd"]["base"])
+        self.assertFalse(recovered.read("testnet","ETH")["recovered_not_live"])
+
+    def test_legacy_live_restart_starts_new_calculation_without_converting_history(self):
+        from test_order_flow import legacy_record
+        flow=OrderFlow();flow.import_asset(legacy_record())
+        self.journal.write(flow,[event(1,1,network="mainnet",size="3"),
+            Operation("advance","mainnet","ETH",START+63000,contact_ms=START+63000)])
+        before=self.journal.db.execute("SELECT payload FROM checkpoints").fetchone()[0]
+        live=LiveStore(self.journal)
+        self.assertEqual(self.journal.db.execute("SELECT payload FROM checkpoints").fetchone()[0],before)
+        old=live.read("mainnet","ETH")
+        self.assertEqual(old["calculation_version"],"1.0")
+        self.assertTrue(old["recovered_not_live"])
+        self.assertIsNone(old["cvd"]["base"])
+        client=self.fake();client.clock_ms=lambda:START+65000
+        client.last_message_ms=START+65000
+        live.sync_ws(client,now_ms=START+65000)
+        new=live.read("mainnet","ETH")
+        self.assertEqual(new["calculation_version"],"2.0")
+        self.assertEqual(new["cvd"]["segment_id"],2)
+        self.assertFalse(new["windows"]["1m"]["signed_available"])
+        client.clock_ms=lambda:START+66000
+        client.handle_message(packet("trades",[trade(tid=2,time_ms=START+66000,side="A",sz="2")]))
+        live.sync_ws(client,now_ms=START+66000)
+        client.clock_ms=lambda:START+69000
+        client.handle_message(packet("l2Book",book(time_ms=START+69000)))
+        live.sync_ws(client,now_ms=START+69000)
+        new=live.read("mainnet","ETH")
+        self.assertEqual(new["cvd"]["base"],"-2")
+        self.assertEqual(new["observed_total"]["volume_base"],"5")
+        self.assertEqual(new["gap_reasons"],{"restart":1})
+        self.assertTrue(recovery_check(self.journal,live.engine)["state_matches"])

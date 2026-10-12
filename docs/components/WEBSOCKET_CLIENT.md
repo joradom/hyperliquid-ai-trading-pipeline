@@ -1,6 +1,6 @@
 # WebSocket público — FASE 1
 
-Cliente independiente de Hyperliquid mainnet, READ-ONLY. Implementación:
+Cliente independiente de Hyperliquid mainnet/testnet, READ-ONLY. Implementación:
 [`ws_client.py`](../../python/src/ws_client.py) y
 [`stream_types.py`](../../python/src/stream_types.py).
 No está conectado a Market State, scanner, análisis ni revalidación.
@@ -184,16 +184,18 @@ ausencia de pérdida, y silencio de trades no prueba desconexión si heartbeat v
 
 ## Semántica de side: evidencia y certeza
 
-Estado conservador: **side_semantics=unverified**. Ni Trade ni ReceivedTrade
-exponen un signo de agresión, Delta o CVD. El campo original A/B se conserva.
+La [notación oficial](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/notation)
+define **B comprador agresor y A vendedor agresor** en trades. El reporte usa
+`side_semantics=documented_hyperliquid_aggressor`. Trade/ReceivedTrade conservan
+el A/B original; el transporte no calcula Delta/CVD ni consulta fills de cuentas.
+La versión de semántica y las matemáticas firmadas pertenecen al motor de
+[Order Flow](ORDER_FLOW.md#estado-de-side-y-acceso-a-métricas-firmadas).
 
-El SDK oficial nombra A=Ask y B=Bid en su ejemplo de órdenes y mapea B a una
-orden compradora. Sus tipos publican Side=A|B, y WsTrade/Trade no explican si
-el lado de un match público representa al agresor o al lado consumido. Los
-campos crossed de fills de usuarios no son una prueba sobre este canal y no
-se han consultado cuentas para resolverlo.
-[Tipos oficiales](https://github.com/hyperliquid-dex/hyperliquid-python-sdk/blob/master/hyperliquid/utils/types.py),
-[mapeo oficial de lados de órdenes](https://github.com/hyperliquid-dex/hyperliquid-python-sdk/blob/master/examples/basic_adding.py).
+La API `PublicWSClient(..., network="testnet")` y la CLI `--network testnet`
+seleccionan el [endpoint oficial de testnet](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket).
+Mainnet sigue siendo el valor por defecto. La caché de identidades usa la red
+seleccionada y Live Store la conserva en operaciones y claves SQLite; datos de
+testnet no se etiquetan ni suman como mainnet.
 
 Prueba reproducible incorporada a la CLI, usando únicamente este stream:
 
@@ -211,7 +213,8 @@ seleccionar automáticamente una. Es evidencia observacional, no verdad de
 ground truth: entre snapshots puede cambiar el libro, varias órdenes comparten
 bloque y nSigFigs=5 agrega precios. Que un trade contradiga el BBO anterior no
 demuestra necesariamente que su side esté invertido. Se requiere evidencia
-adicional concluyente para cambiar la constante de semántica en otra revisión.
+adicional para deducir signos a partir del BBO. La semántica actual procede de
+la documentación del protocolo; estos contadores no la cambian ni la habilitan.
 
 ## Pruebas y captura de aceptación
 
@@ -263,7 +266,8 @@ con esa hipótesis y 7 en sentido contrario. No es una verificación concluyente
 Casos excluidos ETH: 30 pre_connection/late, 88 libro demasiado antiguo, 15
 precio interior/exterior del BBO previo. HYPE: 30 pre_connection/late, 223 libro
 antiguo, 38 precio interior/exterior y 12 timestamp de libro igual al trade.
-Todos los contadores corresponden a eventos únicos; la semántica sigue unverified.
+Todos los contadores corresponden a eventos únicos; en aquella captura la
+semántica estaba marcada unverified. Las cifras históricas no se han recalculado.
 
 Una primera captura de 60 s falló por los campos L2 ampliados descritos arriba:
 solo trades confirmó, 28 mensajes rechazados, 4 ACK timeout y 3 reconexiones.
@@ -277,7 +281,8 @@ de formatos documentados y queda registrada, no se ocultó flexibilizando todo J
 
 FASE 1 solo transporta eventos públicos y diagnósticos. FASE 2 ya añade el
 consumidor standalone [Order Flow](ORDER_FLOW.md), SQLite y matemáticas Delta/CVD
-validadas con fixtures; los datos reales conservan side unverified y valores
-firmados null. Este cliente mantiene sus responsabilidades de transporte.
+validadas con fixtures; el motor 2.0 habilita valores firmados reales conforme
+a semántica documentada, cobertura y frescura. Los checkpoints 1.0 se conservan
+sin reinterpretarlos. Este cliente mantiene sus responsabilidades de transporte.
 REST de trades perdidos, indicadores adicionales, OBI por bandas, DOM y
 integración con consumidores existentes continúan pendientes de autorización.

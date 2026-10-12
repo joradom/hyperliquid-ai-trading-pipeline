@@ -76,12 +76,13 @@ class LiveStore:
         # SQLite is the identity authority, including after WS cache expiry.
         # Real late/conflicting trades still cut segments inside OrderFlow.
         client.durable_dedup = not self.journal.closed
+        network = client.network
         operations=[]
         next_source={}
         active=(client.state=="live" and client.last_message_ms is not None
                 and -5000<=now_ms-client.last_message_ms<=self.engine.config["freshness_ms"])
         for coin in client.symbols:
-            key=("mainnet",coin)
+            key=(network,coin)
             asset=self.engine.asset(*key)
             current=(client.connection_epoch,client.continuity_epoch[coin])
             prior=self._source.get(key)
@@ -100,11 +101,11 @@ class LiveStore:
             event=client.pop_trade()
             if event is None: break
             consumed.append(event)
-            operations.append(Operation.from_received(event))
+            operations.append(Operation.from_received(event, network=network))
         for coin in client.symbols:
-            asset=self.engine.asset("mainnet",coin)
+            asset=self.engine.asset(network,coin)
             if active and now_ms//1000>asset.evaluated_at_ms//1000:
-                operations.append(Operation("advance","mainnet",coin,now_ms,contact_ms=client.last_message_ms))
+                operations.append(Operation("advance",network,coin,now_ms,contact_ms=client.last_message_ms))
         if operations:
             try:self.write(operations)
             except Exception:
@@ -116,18 +117,18 @@ class LiveStore:
                 raise
         self._source=next_source
         self._recovery_pending.difference_update(next_source)
-        self.books={ ("mainnet",coin):book for coin,book in client.books.items() }
-        self._book_receipts={ ("mainnet",coin):stamp for coin,stamp in client.last_book_received_ms.items() }
-        self._book_epochs={ ("mainnet",coin):epoch for coin,epoch in client.book_epochs.items() }
-        self._book_conflicts={ ("mainnet",coin):stamp for coin,stamp in client.book_conflicts.items() }
+        self.books={ (network,coin):book for coin,book in client.books.items() }
+        self._book_receipts={ (network,coin):stamp for coin,stamp in client.last_book_received_ms.items() }
+        self._book_epochs={ (network,coin):epoch for coin,epoch in client.book_epochs.items() }
+        self._book_conflicts={ (network,coin):stamp for coin,stamp in client.book_conflicts.items() }
         self._connection_epoch=client.connection_epoch
         self.transport_state=client.state
 
     def read(self,network,coin,*,as_of_ms=None):
         if (network,coin) not in self.engine.assets:raise KeyError("unknown flow asset")
         data=self.engine.snapshot(network,coin,as_of_ms=as_of_ms)
-        data["transport_state"]=self.transport_state
-        data["recovered_not_live"]=(self.transport_state=="recovered_not_live")
+        data["recovered_not_live"]=(network,coin) in self._recovery_pending
+        data["transport_state"]="recovered_not_live" if data["recovered_not_live"] else self.transport_state
         if data["recovered_not_live"]:
             data["quality"]["status"]="degraded"
             data["quality"]["reasons"].append("recovered_not_live")
@@ -182,7 +183,7 @@ async def capture(args):
                    retention_ms=args.retention_seconds*1000 if args.retention_seconds is not None else None,
                    max_db_bytes=args.max_db_mib*1024*1024 if args.max_db_mib is not None else None) as journal:
         live=LiveStore(journal)
-        client=PublicWSClient(args.symbols)
+        client=PublicWSClient(args.symbols,network=getattr(args,"network","mainnet"))
         task=asyncio.create_task(client.run(args.seconds))
         try:
             while not task.done():
@@ -252,7 +253,8 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("symbols",nargs="*",default=["ETH","HYPE"])
     parser.add_argument("--seconds",type=float,default=60)
-    parser.add_argument("--db",type=Path,default=Path(__file__).resolve().parents[2]/"data"/"order_flow"/"mainnet.sqlite3")
+    parser.add_argument("--db",type=Path)
+    parser.add_argument("--network",choices=("mainnet","testnet"),default="mainnet")
     parser.add_argument("--max-journal-rows",type=int,help="override stored limit (new DB default 100000)")
     parser.add_argument("--retention-seconds",type=int,help="override stored retention (new DB default 86400)")
     parser.add_argument("--max-db-mib",type=int,help="override stored page limit (new DB default 64)")
@@ -261,9 +263,11 @@ def main(argv=None):
     modes.add_argument("--replay-trades",type=int)
     parser.add_argument("--json",action="store_true")
     args=parser.parse_args(argv)
+    if args.db is None:
+        args.db=Path(__file__).resolve().parents[2]/"data"/"order_flow"/(args.network+".sqlite3")
     try:
         if args.replay_trades:
-            if args.db.name=="mainnet.sqlite3": parser.error("choose a separate --db for synthetic replay")
+            if args.db.name in ("mainnet.sqlite3","testnet.sqlite3"): parser.error("choose a separate --db for synthetic replay")
             report=replay(args.replay_trades,args.db)
         elif args.recover_only:
             if not args.db.exists(): parser.error("recovery database does not exist")

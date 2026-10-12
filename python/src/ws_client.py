@@ -20,6 +20,7 @@ from .stream_types import (Ack, Book, Trade, Subscription, SIDE_SEMANTICS,
 from .orderbook import bbo
 
 WS_URL = "wss://api.hyperliquid.xyz/ws"
+WS_URLS = {"mainnet": WS_URL, "testnet": "wss://api.hyperliquid-testnet.xyz/ws"}
 
 
 async def connect_public(url: str, **options):
@@ -63,7 +64,10 @@ class PublicWSClient:
                  ack_timeout: float = 10, open_timeout: float = 5, close_timeout: float = 2,
                  queue_capacity: int = 8192, queue_bytes: int = 2_097_152,
                  dedup_capacity: int = 100_000, dedup_ttl_seconds: float = 1200,
-                 book_history_capacity: int = 128, late_tolerance_ms: int = 2000):
+                 book_history_capacity: int = 128, late_tolerance_ms: int = 2000,
+                 network: str = "mainnet"):
+        if not isinstance(network,str) or network not in WS_URLS: raise ValueError("unsupported public WS network")
+        self._network = network
         if isinstance(symbols, (str, bytes)):
             raise ValueError("symbols must be a sequence")
         self.symbols = tuple(dict.fromkeys(symbol(s) for s in symbols))
@@ -125,6 +129,11 @@ class PublicWSClient:
         self._invalid_streak = 0
         self._last_error = None
 
+    @property
+    def network(self):
+        """The source network cannot change while a socket/queue is in use."""
+        return self._network
+
     def stop(self):
         """Wake a pending recv and close; safe from the owning event loop."""
         self._stop.set()
@@ -170,7 +179,8 @@ class PublicWSClient:
         counts["trades_received"] += 1
         now = self.monotonic()
         self._expire_ids(now)
-        existing = self.seen.get(trade.identity)
+        identity = (self.network, *trade.identity[1:])
+        existing = self.seen.get(identity)
         if existing is not None:
             if existing[0] == trade:
                 self.counts["duplicates"] += 1
@@ -185,7 +195,7 @@ class PublicWSClient:
             self.counts["dedup_evictions"] += 1
             if not self.durable_dedup:
                 self._gap("dedup_capacity_eviction", evicted.coin)
-        self.seen[trade.identity] = (trade, now)
+        self.seen[identity] = (trade, now)
         previous = self.last_trade_ms.get(trade.coin)
         out_of_order = previous is not None and trade.time_ms < previous
         pre_connection = self.connected_at_ms is not None and trade.time_ms < self.connected_at_ms
@@ -384,7 +394,7 @@ class PublicWSClient:
                 try:
                     self.counts["connection_attempts"] += 1
                     self._transport = await asyncio.wait_for(self.connector(
-                        WS_URL, open_timeout=self.open_timeout, close_timeout=self.close_timeout,
+                        WS_URLS[self.network], open_timeout=self.open_timeout, close_timeout=self.close_timeout,
                         ping_interval=None, max_size=MAX_MESSAGE_BYTES, max_queue=16, compression=None),
                         timeout=min(self.open_timeout, deadline - self.monotonic()))
                     self.counts["connections"] += 1
@@ -473,7 +483,7 @@ class PublicWSClient:
                            "side_probe": dict(self.probe_counts[coin])}
         stamp = lambda value: datetime.fromtimestamp(value / 1000, timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z") if value else None
         return {"kind": "public_ws_diagnostics", "schema_version": "1.0", "read_only": True,
-                "execution_authorized": False, "endpoint": WS_URL, "side_semantics": SIDE_SEMANTICS,
+                "execution_authorized": False, "endpoint": WS_URLS[self.network], "side_semantics": SIDE_SEMANTICS,
                 "state": self.state, "connection_epoch": self.connection_epoch,
                 "started_at_utc": stamp(self.started_at_ms), "first_connected_at_utc": stamp(self.first_connected_at_ms),
                 "ended_at_utc": stamp(self.ended_at_ms), "observation_seconds": self.observation_seconds,
@@ -486,7 +496,7 @@ class PublicWSClient:
 
 
 async def _capture(args):
-    client = PublicWSClient(args.symbols)
+    client = PublicWSClient(args.symbols, network=args.network)
     async def drain():
         while True:
             while client.pop_trade() is not None:
@@ -511,6 +521,7 @@ def main(argv=None) -> int:
     parser.add_argument("--seconds", type=float, default=60, help="observation budget after first connect (default 60)")
     parser.add_argument("--continuous", action="store_true", help="run until Ctrl+C")
     parser.add_argument("--json", action="store_true", help="summary only; no raw packets or addresses")
+    parser.add_argument("--network", choices=tuple(WS_URLS), default="mainnet")
     args = parser.parse_args(argv)
     try:
         report = asyncio.run(_capture(args))

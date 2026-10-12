@@ -1,6 +1,6 @@
 # DOM interactivo de consola — FASE 4
 
-Monitor foreground READ-ONLY de datos públicos mainnet. Implementación:
+Monitor foreground READ-ONLY de datos públicos mainnet/testnet. Implementación:
 [`dom.py`](../../python/src/dom.py). No usa cuentas, wallets, firmas, órdenes,
 scanner ni modelos. No interpreta OBI como señal de compra/venta.
 
@@ -24,6 +24,7 @@ Más opciones:
 
 ```bash
 .venv/bin/python -m src.dom ETH HYPE SOL
+.venv/bin/python -m src.dom ETH HYPE --network testnet
 .venv/bin/python -m src.dom ETH HYPE --levels 15 --refresh 2
 .venv/bin/python -m src.dom ETH HYPE --seconds 15 --no-color
 ```
@@ -138,10 +139,19 @@ no utilizable se marca WARMUP/PARTIAL/STALE/GAP; sus conteos parciales se etique
 `obs`, nunca se presentan como valores completos. Los totales observados pueden
 incluir bootstrap o eventos fuera del segmento activo, según el contrato actual.
 
-En mainnet se muestra **UNVERIFIED** en lugar de Delta/CVD. No existe un flag
-para forzar signos. Solo una vista con semántica synthetic verificada y métricas
-disponibles puede mostrar valores firmados en los tests. El CVD acumulado exige
-también `cvd.available`; no se muestra un valor obsoleto como válido.
+Mainnet/testnet de cálculo 2.0 y semántica 1.0 muestran **AGGRESSOR A/B**:
+B comprador y A vendedor agresor, según el protocolo, sin inferirlos mediante L2.
+La cabecera identifica la red; mainnet sigue siendo el default. Delta/CVD de
+ventana exige `ready`, `signed_available` y contacto live/fresco. El CVD acumulado
+exige también `cvd.available`, muestra el segmento y la edad del contacto; no
+cruza gaps ni muestra valores recuperados/stale como actuales. En vista amplia
+se muestra la cobertura temporal por ventana, que no certifica todos los trades
+del exchange. No se duplican cálculos: render consume las métricas del motor.
+
+Checkpoints 1.0 reales siguen mostrando **UNVERIFIED** y valores firmados ausentes.
+Las vistas synthetic conservan su etiqueta y convención verificadas. Una versión
+o semántica desconocida no habilita valores firmados. No existe un flag de UI
+para forzar signos ni convertir historia unsigned en firmada.
 
 Las filas visibles se reducen si la altura no alcanza para los niveles solicitados.
 El pie indica visibles/solicitados. Con menos de 42 columnas o 14 filas se cambia

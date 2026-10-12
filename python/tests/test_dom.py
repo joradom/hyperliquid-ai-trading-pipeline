@@ -149,10 +149,10 @@ class DOMRenderTests(unittest.TestCase):
         console.print(render_frame(frame or self.session.frame(),width,height))
         return output.getvalue()
 
-    def test_full_render_has_prices_notionals_cumulative_depth_bands_and_unverified(self):
+    def test_full_render_has_prices_notionals_cumulative_depth_bands_and_aggressor(self):
         text=self.text()
         for value in ("READ-ONLY","ETH","Bid px","Ask px","quote","Σ base",
-                      "OBI observado","OBI válido","PARTIAL","WARMUP","UNVERIFIED","1m","5m","15m"):
+                      "OBI observado","OBI válido","PARTIAL","WARMUP","AGGRESSOR A/B","1m","5m","15m"):
             self.assertIn(value,text)
         self.assertNotIn("\x1b[",text)
 
@@ -162,7 +162,7 @@ class DOMRenderTests(unittest.TestCase):
         self.assertLessEqual(len(text.splitlines()),24)
         self.assertTrue(all(len(line)<=80 for line in text.splitlines()))
         short=self.text(width=60,height=16)
-        self.assertIn("3/10 niveles",short)
+        self.assertIn("2/10 niveles",short)
         self.assertLessEqual(len(short.splitlines()),16)
 
     def test_tiny_terminal_and_null_values_are_legible(self):
@@ -181,7 +181,7 @@ class DOMRenderTests(unittest.TestCase):
         text=self.text(frame)
         self.assertIn("L2 STALE",text)
         self.assertIn("TAPE GAP",text)
-        self.assertIn("UNVERIFIED",text)
+        self.assertIn("AGGRESSOR A/B",text)
         self.assertIsNone(l2["metrics"]["obi_legacy"]["valid"])
 
     def test_renderer_uses_provided_obi_and_never_recalculates_or_mutates_views(self):
@@ -215,6 +215,7 @@ class DOMRenderTests(unittest.TestCase):
 
     def test_ready_partial_and_unknown_signed_values_remain_distinct(self):
         frame=self.session.frame();data=frame.flow.to_dict()
+        data.update(calculation_version="1.0",side_semantics="unverified",side_semantics_version=None)
         data["windows"]["1m"].update(ready=True,trades=7,volume_base="12.34567",volume_quote="1234.5678")
         data["windows"]["1m"]["quality_reasons"]=["side_semantics_unverified"]
         text=self.text(replace(frame,flow=LiveSnapshot(freeze(data))))
@@ -240,9 +241,10 @@ class DOMRenderTests(unittest.TestCase):
 
     def test_verified_synthetic_signed_values_require_engine_availability(self):
         frame=self.session.frame();data=frame.flow.to_dict()
+        data["network"]="synthetic"
         data["side_semantics"]="verified_synthetic_aggressor"
         data["cvd"].update(base="9.876",quote="987.6",available=True)
-        data["windows"]["1m"].update(signed_available=True,delta_base="1.234",cvd_window_base="1.234")
+        data["windows"]["1m"].update(ready=True,signed_available=True,delta_base="1.234",cvd_window_base="1.234")
         text=self.text(replace(frame,flow=LiveSnapshot(freeze(data))))
         self.assertIn("VERIFIED SYNTHETIC",text)
         self.assertIn("9.876",text)
@@ -250,6 +252,52 @@ class DOMRenderTests(unittest.TestCase):
         data["cvd"]["available"]=False
         text=self.text(replace(frame,flow=LiveSnapshot(freeze(data))))
         self.assertNotIn("9.876",text)
+
+    def test_documented_real_delta_requires_versions_coverage_and_availability(self):
+        for network in ("mainnet","testnet"):
+            frame=self.session.frame();data=frame.flow.to_dict();data["network"]=network
+            data["windows"]["1m"].update(ready=True,signed_available=True,delta_base="2.345",cvd_window_base="2.345")
+            data["cvd"].update(available=True,base="7.654",quote="765.4")
+            text=self.text(replace(frame,flow=LiveSnapshot(freeze(data))))
+            self.assertIn("AGGRESSOR A/B",text)
+            self.assertIn("2.345",text)
+            self.assertIn("7.654",text)
+            for mutate in (lambda d:d.update(side_semantics_version="unknown"),
+                           lambda d:d.update(calculation_version="1.0"),
+                           lambda d:d["connection"].update(fresh=False),
+                           lambda d:d.update(recovered_not_live=True),
+                           lambda d:d["windows"]["1m"].update(ready=False),
+                           lambda d:d["windows"]["1m"].update(signed_available=False)):
+                import copy
+                invalid=copy.deepcopy(data);mutate(invalid)
+                text=self.text(replace(frame,flow=LiveSnapshot(freeze(invalid))))
+                self.assertNotIn("2.345",text)
+                if not invalid["connection"]["fresh"] or invalid.get("recovered_not_live"):
+                    self.assertNotIn("7.654",text)
+
+    def test_legacy_unsigned_render_cannot_show_forged_directional_values(self):
+        frame=self.session.frame();data=frame.flow.to_dict()
+        data.update(calculation_version="1.0",side_semantics="unverified",side_semantics_version=None)
+        data["windows"]["1m"].update(ready=True,signed_available=True,delta_base="2.345",cvd_window_base="2.345")
+        data["cvd"].update(available=True,base="7.654")
+        text=self.text(replace(frame,flow=LiveSnapshot(freeze(data))))
+        self.assertIn("UNVERIFIED",text)
+        self.assertNotIn("2.345",text);self.assertNotIn("7.654",text)
+
+    def test_testnet_session_reads_testnet_views_and_identifies_network(self):
+        client=PublicWSClient(("ETH",),network="testnet",clock_ms=lambda:NOW+1000)
+        client.connection_epoch=1;client.connected_at_ms=NOW
+        client.pending={sub:100 for sub in client.desired}
+        for sub in client.desired:client.handle_message(ack(sub))
+        client.handle_message(packet("l2Book",wire_book()))
+        self.live.sync_ws(client,now_ms=NOW+1000)
+        session=DOMSession(client,self.live,RecordingRenderer(),clock_ms=lambda:NOW+1000)
+        frame=session.frame()
+        self.assertEqual(frame.flow["network"],"testnet")
+        self.assertEqual(frame.l2["network"],"testnet")
+        text=self.text(frame)
+        self.assertIn("TESTNET",text)
+        self.assertIn("AGGRESSOR A/B",text)
 
 
 class DOMLifecycleTests(unittest.IsolatedAsyncioTestCase):

@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Callable
 
 from .integrity import canonical_checksum_payload
-from .order_flow import CALCULATION_VERSION, Operation, OrderFlow
-from .stream_types import restore_trade
+from .order_flow import CALCULATION_VERSION, SUPPORTED_CALCULATIONS, Operation, OrderFlow
+from .stream_types import SIDE_SEMANTICS_VERSION, restore_trade
 
 DB_VERSION = 1
 
@@ -108,9 +108,11 @@ class FlowStore:
             self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             self.db.close(); self.closed = True
 
-    def _journal(self, op, kind, result):
-        document = {"db_version":DB_VERSION,"calculation_version":CALCULATION_VERSION,
+    def _journal(self, op, kind, result, asset):
+        document = {"db_version":DB_VERSION,"calculation_version":asset.calculation_version,
                     "operation":op.record(),"outcome":result}
+        if asset.calculation_version == CALCULATION_VERSION:
+            document["side_semantics_version"] = asset.side_semantics_version
         row = self.db.execute("INSERT INTO journal(network,coin,kind,at_ms,trade_ms,tid,payload,checksum) VALUES(?,?,?,?,?,?,?,?)",
                    (op.network,op.coin,kind,op.at_ms,op.trade.time_ms if op.trade else None,
                     op.trade.tid if op.trade else None,encode(document),digest(document)))
@@ -163,7 +165,7 @@ class FlowStore:
                             engine.note_conflict(op.network,op.coin,op.at_ms); result="conflict"
                 if result is None: result = engine.apply(op)
                 kind = ("trade" if result in ("accepted","bootstrap","prior_epoch","late","overflow") else result) if op.kind=="trade" else op.kind
-                seq = self._journal(op,kind,result)
+                seq = self._journal(op,kind,result,engine.asset(op.network,op.coin))
                 touched[(op.network,op.coin)]=seq; results.append(result)
             if fault: fault("after_journal")
             anchors={key:self.db.execute("SELECT checksum FROM journal WHERE seq=?",(seq,)).fetchone()[0]
@@ -210,8 +212,12 @@ class FlowStore:
             document = checked(payload,checksum)
             if seq!=expected: raise FlowIntegrityError("journal sequence missing")
             expected+=1
-            if document["db_version"]!=DB_VERSION or document["calculation_version"]!=CALCULATION_VERSION:
+            if document["db_version"]!=DB_VERSION or document["calculation_version"] not in SUPPORTED_CALCULATIONS:
                 raise FlowIntegrityError("unsupported journal version")
+            if document["calculation_version"] == CALCULATION_VERSION and document.get("side_semantics_version") != SIDE_SEMANTICS_VERSION:
+                raise FlowIntegrityError("unsupported journal side semantics")
+            if document["calculation_version"] != CALCULATION_VERSION and document.get("side_semantics_version") is not None:
+                raise FlowIntegrityError("unsupported legacy journal side semantics")
             op = Operation.restore(document["operation"])
             if (network,coin,at_ms,trade_ms,tid)!=(op.network,op.coin,op.at_ms,op.trade.time_ms if op.trade else None,op.trade.tid if op.trade else None):
                 raise FlowIntegrityError("journal index/document mismatch")
@@ -227,6 +233,9 @@ class FlowStore:
             state = document["state"]
             if document["db_version"]!=DB_VERSION or document["last_seq"]!=last_seq or (state["network"],state["coin"])!=(network,coin):
                 raise FlowIntegrityError("checkpoint metadata mismatch")
+            # Validate calculation/semantics and aggregate signatures even when
+            # callers request verify() without subsequently recovering.
+            OrderFlow(**state["config"]).import_asset(state)
             if self.db.execute("SELECT 1 FROM journal WHERE network=? AND coin=? AND seq>? LIMIT 1",(network,coin,last_seq)).fetchone():
                 raise FlowIntegrityError("journal beyond atomic checkpoint")
             last = self.db.execute("SELECT checksum FROM journal WHERE network=? AND coin=? AND seq=?",(network,coin,last_seq)).fetchone()

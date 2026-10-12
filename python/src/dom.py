@@ -17,7 +17,8 @@ from pathlib import Path
 
 from .flow_store import FlowStore
 from .live_store import LiveSnapshot, LiveStore, freeze, recovery_check
-from .stream_types import symbol
+from .stream_types import symbol, SIDE_SEMANTICS, SIDE_SEMANTICS_VERSION, SYNTHETIC_SIDE_SEMANTICS
+from .order_flow import CALCULATION_VERSION, LEGACY_CALCULATION_VERSION
 from .ws_client import PublicWSClient
 
 DATA_ROOT = Path(__file__).resolve().parents[2] / "data/order_flow"
@@ -186,8 +187,16 @@ def render_frame(frame: DOMFrame, width: int, height: int):
                    "FRESH" if l2.get("quality", {}).get("usable") else "DEGRADED")
     tape_status = "GAP" if (asset.get("continuity") == "gap_detected" or
                               "historical_gaps" in flow.get("quality", {}).get("reasons", ())) else "NO KNOWN GAP"
-    verified = flow.get("side_semantics") == "verified_synthetic_aggressor"
-    side_label = "VERIFIED SYNTHETIC" if verified else "UNVERIFIED"
+    synthetic = flow.get("network") == "synthetic" and flow.get("side_semantics") == SYNTHETIC_SIDE_SEMANTICS
+    current_semantics = (flow.get("calculation_version") == CALCULATION_VERSION and
+                         flow.get("side_semantics_version") == SIDE_SEMANTICS_VERSION)
+    documented = (flow.get("network") in ("mainnet","testnet") and
+                  flow.get("side_semantics") == SIDE_SEMANTICS and current_semantics)
+    verified = documented or (synthetic and (current_semantics or
+                                 flow.get("calculation_version") == LEGACY_CALCULATION_VERSION))
+    flow_live = (flow.get("connection",{}).get("connected") and
+                 flow.get("connection",{}).get("fresh") and not flow.get("recovered_not_live"))
+    side_label = "AGGRESSOR A/B" if documented else "VERIFIED SYNTHETIC" if verified else "UNVERIFIED"
     stamp = datetime.fromtimestamp(frame.as_of_ms / 1000, timezone.utc).strftime("%H:%M:%S")
     paused = "PAUSED · " if frame.paused else ""
     color = "yellow" if frame.paused or book_status != "FRESH" else "dim"
@@ -201,6 +210,8 @@ def render_frame(frame: DOMFrame, width: int, height: int):
                      line("WARMUP: todavía falta duración continua para la ventana."),
                      line("GAP: interrupción registrada; WS LIVE no borra el historial.", "yellow"),
                      line("UNVERIFIED: side A/B sin verificar; Delta/CVD no disponibles.", "dim"),
+                     line("B comprador / A vendedor agresor; no se infiere desde L2."),
+                     line("CVD: acumulado del segmento; un gap/reinicio abre otro origen."),
                      line("C / P / U: banda complete / partial / unknown."),
                      line("OBI %: ratio original ×100; obs observado, val válido, — ausente."),
                      line("base: cantidad; quote: nocional; Σ: acumulado; e: epoch WS."),
@@ -228,9 +239,9 @@ def render_frame(frame: DOMFrame, width: int, height: int):
         return compose(*(rows[:max(1, height-1)] + [rows[-1]])) if height < len(rows) else compose(*rows)
 
     full = width >= 110 and height >= 30
-    reserve = 19 if full else 13
+    reserve = (20 if full else 14) if verified else (19 if full else 13)
     visible = min(frame.levels, max(1, height - reserve))
-    items = [line(f"{paused}R102 DOM · {frame.symbol} [{frame.asset_index+1}/{frame.asset_count}] · READ-ONLY · {stamp} UTC", "bold"),
+    items = [line(f"{paused}R102 DOM · {frame.symbol} [{frame.asset_index+1}/{frame.asset_count}] · READ-ONLY · {str(flow.get('network','')).upper()} · {stamp} UTC", "bold"),
              line(f"WS {str(frame.transport.get('state', 'disconnected')).upper()} e{frame.transport.get('connection_epoch', 0)} · L2 {book_status} ex {age(freshness.get('exchange', {}).get('age_ms'))} rc {age(freshness.get('receipt', {}).get('age_ms'))} · TAPE {tape_status}", color),
              line(f"Bid {number(bbo.get('best_bid'), places=None)}   Ask {number(bbo.get('best_ask'), places=None)}   Mid {number(bbo.get('midpoint'), places=None)}", "bold"),
              line(f"[{side_label}] · Spread {number(bbo.get('spread_absolute'), places=None)} quote · {number(bbo.get('spread_bps'), places=2)} bps", "dim")]
@@ -295,6 +306,7 @@ def render_frame(frame: DOMFrame, width: int, height: int):
     windows = Table(box=None, padding=(0, 1), expand=False, show_header=full)
     for title in ("Flujo", "Estado", "Trades", "base", "quote", "Delta / CVD base"):
         windows.add_column(title, no_wrap=True)
+    if full: windows.add_column("Cobertura",no_wrap=True)
     for name in ("1m", "5m", "15m"):
         row = flow.get("windows", {}).get(name, {})
         reasons = row.get("quality_reasons", ())
@@ -303,16 +315,21 @@ def render_frame(frame: DOMFrame, width: int, height: int):
         partial = row.get("observed_partial", {})
         label = "" if row.get("ready") else "obs "
         display = row if row.get("ready") else partial
-        signed = verified and row.get("signed_available")
+        signed = verified and flow_live and row.get("ready") and row.get("signed_available")
         delta = f"{number(row.get('delta_base'))} / {number(row.get('cvd_window_base'))}" if signed else "UNVERIFIED" if not verified else MISSING
         status_label = status + (" PARTIAL" if not row.get("ready") and status != "PARTIAL" else "")
-        windows.add_row(name, Text(status_label, style="green" if status == "READY" else "yellow"),
-                        label + number(display.get("trades")), number(display.get("volume_base"), compact=True),
-                        number(display.get("volume_quote"), compact=True, places=2), Text(delta, style="dim"))
+        cells=[name, Text(status_label, style="green" if status == "READY" else "yellow"),
+               label + number(display.get("trades")), number(display.get("volume_base"), compact=True),
+               number(display.get("volume_quote"), compact=True, places=2), Text(delta, style="dim")]
+        if full:
+            ratio=row.get("coverage_ratio")
+            cells.append(MISSING if ratio is None else f"{ratio*100:.0f}%")
+        windows.add_row(*cells)
     items.append(windows)
     if verified:
         cvd = flow.get("cvd", {})
-        items.append(line(f"CVD segmento · base {number(cvd.get('base') if cvd.get('available') else None)} · quote {number(cvd.get('quote') if cvd.get('available') else None)}"))
+        available=flow_live and cvd.get("available")
+        items.append(line(f"CVD s{cvd.get('segment_id', 0)} · base {number(cvd.get('base') if available else None)} · quote {number(cvd.get('quote') if available else None)} · rc {age(flow.get('freshness',{}).get('contact_age_ms'))}"))
     controls = "Q salir · P pausa · +/- niveles · Tab activo"
     if frame.paused:
         controls = "P reanudar · ingesta activa · Q · +/- · Tab"
@@ -372,8 +389,8 @@ class DOMSession:
         coin = self.controls.selected
         now = self.clock_ms()
         try:
-            flow = self.live.read("mainnet", coin, as_of_ms=now)
-            l2 = self.live.read_l2("mainnet", coin, as_of_ms=now)
+            flow = self.live.read(self.client.network, coin, as_of_ms=now)
+            l2 = self.live.read_l2(self.client.network, coin, as_of_ms=now)
         except KeyError:
             flow = l2 = None
         return DOMFrame(coin, self.controls.index, len(self.client.symbols), self.controls.levels,
@@ -443,8 +460,8 @@ class DOMSession:
                 self.final_report = {"read_only": True, "execution_authorized": False,
                     "transport": transport, "recovery": check, "remaining_trade_queue": len(self.client.trade_queue),
                     "ingest_cycles": self.ingest_cycles, "rendered_frames": self.rendered_frames,
-                    "observed_trades": {coin: self.live.read("mainnet", coin)["observed_total"]["unique_trades"]
-                                        for coin in self.client.symbols if ("mainnet", coin) in self.live.engine.assets}}
+                    "observed_trades": {coin: self.live.read(self.client.network, coin)["observed_total"]["unique_trades"]
+                                        for coin in self.client.symbols if (self.client.network, coin) in self.live.engine.assets}}
             finally:
                 try:
                     await self.renderer.close()
@@ -476,7 +493,7 @@ async def foreground(args, console):
     console.print(f"R102 DOM READ-ONLY · SQLite nueva: {path}", style="dim", markup=False)
     with FlowStore(path) as journal:
         live = LiveStore(journal)
-        client = PublicWSClient(args.symbols)
+        client = PublicWSClient(args.symbols, network=getattr(args,"network","mainnet"))
         renderer = RichRenderer(console)
         with TerminalKeys() as keyboard:
             session = DOMSession(client, live, renderer, refresh=args.refresh, levels=args.levels,
@@ -499,6 +516,7 @@ def main(argv=None):
     parser.add_argument("--seconds", type=float, help="optional short public capture budget")
     parser.add_argument("--no-color", action="store_true")
     parser.add_argument("--db", type=Path, help="new database path inside ignored data/order_flow")
+    parser.add_argument("--network", choices=("mainnet","testnet"), default="mainnet")
     args = parser.parse_args(argv)
     try:
         args.symbols = list(dict.fromkeys(symbol(value) for value in args.symbols))

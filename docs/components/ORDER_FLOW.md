@@ -35,29 +35,23 @@ propiedad de un único event loop, con un único writer SQLite.
 
 ## Estado de side y acceso a métricas firmadas
 
-Se revisaron nuevamente las fuentes oficiales: el SDK nombra A=Ask, B=Bid en
-sus órdenes; los tipos de trade público no establecen inequívocamente si es
-el agresor o la liquidez consumida. Los campos crossed de fills de cuentas no
-constituyen evidencia de este canal y no se consultaron cuentas.
-[Tipos oficiales](https://github.com/hyperliquid-dex/hyperliquid-python-sdk/blob/master/hyperliquid/utils/types.py),
-[ejemplo oficial de órdenes](https://github.com/hyperliquid-dex/hyperliquid-python-sdk/blob/master/examples/basic_adding.py),
-[trades WS oficiales](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions).
+La [notación oficial](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/notation)
+establece que el side de un trade es el agresor: **B comprador, A vendedor**.
+Mainnet y testnet usan `side_semantics=documented_hyperliquid_aggressor`,
+`side_semantics_version=1.0` y `calculation_version=2.0`. No se infiere el lado
+desde L2 ni desde fills de cuentas. Los contadores comparativos BBO del transporte
+siguen siendo diagnósticos y no intervienen en las sumas firmadas.
 
-La comparación pública reproducible de FASE 1 se ejecuta también durante la
-captura de FASE 2. Solo cuenta coincidencias con BBO estrictamente anterior,
-con antigüedad <=1500 ms; excluye historia, datos tardíos, mismo timestamp y
-quotes que ya no permiten concluir. La interpretación es observacional y
-permanece inconcluyente, no una regla heurística de signos.
+Se reutilizan los mismos agregados Decimal, buckets por segundo, ventanas y CVD
+existentes. Volúmenes comprador/vendedor, Delta base/nocional, pendiente y ratio
+solo se publican cuando la ventana es utilizable. CVD de segmento requiere
+contacto fresco y segundos cerrados desde su origen; puede estar disponible
+antes de completar una ventana de un minuto. Un gap siempre abre otro origen.
 
-Por tanto **mainnet y testnet conservan `side_semantics=unverified`**. Volumen
-total y conteo observado están disponibles, pero comprador/vendedor agresor,
-Delta base/nocional, CVD, pendiente y ratio son null. No se calculan signos
-internos para estas redes. No existe un flag CLI para activarlos.
-
-Los fixtures y replay utilizan exclusivamente la red `synthetic`, cuya
-convención conocida es B comprador agresor y A vendedor agresor. Permiten
-validar las matemáticas sin convertir esa convención en verdad de mainnet.
-Checkpoints que intenten activar `signed=true` para otra red se rechazan.
+Los fixtures/replay `synthetic` mantienen `verified_synthetic_aggressor` y la
+misma convención A/B, ahora con versión explícita para nuevos segmentos. Los
+checkpoints 1.0 reales conservan sus agregados sin signo y `unverified`; no se
+activan por leerlos, ni se reconstruye implícitamente histórico desde el journal.
 
 ## Definiciones matemáticas y unidades
 
@@ -125,7 +119,7 @@ En warmup, desconexión, contacto stale o historia insuficiente, valores válido
 de ventana son null. `observed_partial` permanece separado y etiquetado. Antes
 de observar conexión o un trade, incluso observed_total es unavailable/null.
 Cero solo significa cero observado en un intervalo de cobertura conocido, o
-un origen convencional de CVD sintético; no sustituye datos ausentes.
+un origen convencional de CVD del segmento; no sustituye datos ausentes.
 
 Conflictos de identidad, datos tardíos, overflow, cambios de continuidad y
 desconexiones interrumpen el segmento. Un segmento nuevo nunca conserva el CVD
@@ -142,8 +136,23 @@ No se reconstruyen huecos mediante REST ni se unen CVD artificialmente.
 
 ## SQLite y consistencia transaccional
 
-Schema DB=1; cálculo=1.0, independientes del schema de snapshot=1.0.
+Schema DB=1 y schema de snapshot=1.0 se conservan. Nuevos cálculos=2.0 y
+semántica=1.0; las versiones 1.0 históricas siguen siendo recuperables.
 SQLite estándar Python, WAL y synchronous=FULL. No nueva dependencia externa.
+
+Recuperar un checkpoint antiguo conserva su versión y estado exactamente.
+Al reanudar captura, disconnect/restart y connect abren un segmento nuevo de
+cálculo 2.0. Los segmentos cerrados conservan valores y metadatos de su cálculo
+original; el volumen total observado sigue siendo unsigned e incluye la historia.
+Pending antiguo se trata según la frontera de reinicio existente, nunca se suma
+forzándolo al nuevo CVD. Un COMMIT publica transición, journal y checkpoint juntos;
+un fallo devuelve al estado/versionado anterior mediante ROLLBACK.
+
+El journal puede contener operaciones 1.0 y 2.0; las 2.0 llevan versión de side.
+La recuperación valida firmas de agregados, versiones y metadata, incluso con
+checksum recalculado. Los binarios antiguos que solo conocen cálculo 1.0 no
+pueden leer checkpoints 2.0: no se promete downgrade transparente. No se alteran
+las tablas/índices ni se migran o recalculan bases privadas como parte de desarrollo.
 
 Journal append-only dentro del horizonte retenido: identidad económica única
 `(network,coin,event_time,tid)` para filas trade. Reenvío igual se registra como
@@ -209,7 +218,7 @@ suman; conflictos, eventos fuera de retención capaces de afectar al segmento,
 trades realmente tardíos, pérdidas de cola y cambios de época siguen degradando
 continuidad. Los contadores de deduplicación WS describen su caché local; los
 acumulados del motor conservan la unicidad durable. Sin SQLite no se promete
-deduplicación eterna. Mainnet/testnet mantienen `side_semantics=unverified`.
+deduplicación eterna. La semántica documentada no modifica estas reglas de continuidad.
 
 La quota principal usa max_page_count y un fallo FULL es atómico. El WAL y
 archivos auxiliares pueden añadir espacio transitorio; no se presenta 64 MiB
@@ -227,6 +236,9 @@ Desde `python/`, con la dependencia WS opcional de FASE 1 instalada:
 # Captura foreground; carpeta privada ignorada, distinta del experimento
 python3 -B -m src.live_store ETH HYPE --seconds 60 --json
 
+# Testnet explícito, con endpoint e identidades separados
+python3 -B -m src.live_store ETH HYPE --network testnet --seconds 60 --json
+
 # Verificar y recuperar sin abrir una conexión ni reclamar estado live
 python3 -B -m src.live_store --recover-only --json
 
@@ -240,7 +252,8 @@ python3 -B -m src.live_store --replay-trades 20000 --db ../data/order_flow/repla
 python3 -B -m unittest discover -s tests
 ```
 
-Base por defecto: `data/order_flow/mainnet.sqlite3`, ignorada con sus WAL/SHM.
+Base por defecto: `data/order_flow/mainnet.sqlite3`; `--network testnet` usa
+`data/order_flow/testnet.sqlite3`. Ambas están ignoradas con sus WAL/SHM.
 Los reports no incluyen rutas personales, direcciones ni paquetes completos.
 Los snapshots de la API incluyen el último libro normalizado; el resumen CLI
 solo imprime timestamp y número de niveles. L2 no se persiste y al recuperar
@@ -252,8 +265,9 @@ Los nuevos tests cubren vectores Delta/CVD positivos/negativos/neutros,
 nocional diferente de base, pendiente conocida, fronteras half-open, warmup,
 reordenación, late, conflictos, múltiples redes/activos, segmentos, cuotas,
 retención, crashes, corrupción/eliminación, recuperación de pendientes,
-rechazo de motores desactualizados y vistas inmutables. Mainnet/testnet con
-ventana temporal completa siguen devolviendo Delta/CVD null por side no verificado.
+rechazo de motores desactualizados y vistas inmutables. La versión 2.0 añade
+vectores A/B para mainnet/testnet, checkpoints históricos sin conversión silenciosa,
+transición atómica de cálculo, reinicios, recuperación y firma/cobertura/frescura.
 
 Suite final: **220 tests, OK** —190 anteriores y 30 nuevos—; ningún fallo
 pendiente. `git diff --check` limpio. Los seis hashes de módulos protegidos
@@ -304,8 +318,9 @@ coincidencias opuestas; HYPE B_at_ask=26, A_at_bid=18, B_at_bid=2, A_at_ask=3.
 ETH excluyó 30 históricos/late, 221 por libro antiguo, 37 fuera/dentro de BBO
 y 5 por mismo timestamp; HYPE excluyó 30, 362, 352 y 2 respectivamente.
 Favorece observacionalmente agresor, pero no certifica el signo por las
-contradicciones y la cobertura parcial del BBO. Side sigue **unverified** y
-todos los Delta/CVD reales y volúmenes agresores son **null**.
+contradicciones y la cobertura parcial del BBO. En aquella captura 1.0 side era
+**unverified** y los Delta/CVD reales y volúmenes agresores eran **null**. Estos
+resultados históricos no se han reinterpretado con el cálculo 2.0.
 
 Pico Python de captura=4545837 bytes (~4.34 MiB). En este entorno ru_maxrss
 arrojó 479060 KiB incluso en un proceso que solo importaba módulos y cuyo

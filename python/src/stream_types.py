@@ -1,6 +1,6 @@
 """Strict public Hyperliquid WS messages; normalized values contain no users/hash.
 
-This module performs no I/O and assigns no aggressor sign to A/B.
+This module performs no I/O; A/B is preserved using documented aggressor semantics.
 """
 from __future__ import annotations
 
@@ -12,7 +12,9 @@ from typing import Any
 
 from .orderbook import normalize_ws_book
 
-SIDE_SEMANTICS = "unverified"
+SIDE_SEMANTICS = "documented_hyperliquid_aggressor"
+SIDE_SEMANTICS_VERSION = "1.0"  # B buy aggressor, A sell aggressor; never inferred from L2.
+SYNTHETIC_SIDE_SEMANTICS = "verified_synthetic_aggressor"
 CHANNELS = frozenset(("trades", "l2Book"))
 MAX_MESSAGE_BYTES = 1_048_576
 MAX_BATCH_TRADES = 4096
@@ -103,7 +105,8 @@ class Trade:
 
     @property
     def identity(self) -> tuple:
-        # Official identity is (block_time, coin, tid), namespaced to mainnet.
+        # Legacy default namespace. PublicWSClient uses its selected network;
+        # the official economic identity is (block_time, coin, tid).
         return ("mainnet", self.time_ms, self.coin, self.tid)
 
     @property

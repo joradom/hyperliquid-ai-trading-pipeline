@@ -148,9 +148,20 @@ class WSStateTests(unittest.TestCase):
         probe = client.summary()["assets"]["ETH"]["side_probe"]
         for key in ("B_at_ask", "A_at_bid", "B_at_bid", "A_at_ask", "inside_or_outside_previous_bbo"):
             self.assertEqual(probe[key], 1)
-        self.assertEqual(client.summary()["side_semantics"], "unverified")
+        self.assertEqual(client.summary()["side_semantics"], "documented_hyperliquid_aggressor")
         self.assertNotIn("delta", json.dumps(client.summary()).lower())
         self.assertNotIn("cvd", json.dumps(client.summary()).lower())
+
+    def test_testnet_identity_namespace_and_invalid_network_are_explicit(self):
+        client=ready(network="testnet")
+        client.handle_message(packet("trades",[trade()]))
+        client.handle_message(packet("trades",[trade()]))
+        self.assertEqual(client.counts["duplicates"],1)
+        self.assertEqual(next(iter(client.seen))[0],"testnet")
+        self.assertEqual(client.summary()["endpoint"],"wss://api.hyperliquid-testnet.xyz/ws")
+        with self.assertRaises(AttributeError):client.network="mainnet"
+        for network in ("synthetic",[],None):
+            with self.assertRaises(ValueError):ready(network=network)
 
     def test_no_book_pong_or_stale_book_is_not_new_market_evidence(self):
         now = NOW
@@ -257,6 +268,16 @@ class WSAsyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([e.connection_epoch for e in client.trade_queue],[1,2])
         self.assertIn("remote_closed",client.gap_reasons["ETH"])
         self.assertTrue(all(socket.closed for socket in sockets))
+
+    async def test_testnet_connects_only_to_its_documented_endpoint(self):
+        socket=FakeSocket(rows=(packet("trades",[trade()]),))
+        endpoints=[]
+        async def connector(url,**options):endpoints.append(url);return socket
+        client=self.client(connector,network="testnet")
+        await self.run_until(client,lambda:client.counts["unique_trades"]==1)
+        self.assertEqual(endpoints,["wss://api.hyperliquid-testnet.xyz/ws"])
+        self.assertEqual(next(iter(client.seen))[0],"testnet")
+        self.assertFalse(client.summary()["execution_authorized"])
 
     async def test_real_reconnect_path_clears_all_l2_provenance_until_new_snapshot(self):
         sockets=[FakeSocket(rows=(packet("l2Book",book(time_ms=NOW-50)),

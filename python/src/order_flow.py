@@ -1,7 +1,7 @@
 """Deterministic per-network/asset order flow on normalized public trades.
 
-Mainnet/testnet side is deliberately unverified. Signed maths are enabled only
-for synthetic fixtures with an explicitly known aggressor convention.
+Hyperliquid uses B buy aggressor / A sell aggressor. Legacy checkpoints retain
+their original calculation until an explicit new connection segment begins.
 """
 from __future__ import annotations
 
@@ -12,16 +12,24 @@ from dataclasses import dataclass
 from decimal import Decimal, Context, localcontext
 from typing import Any
 
-from .stream_types import Trade, restore_trade, trade_record, symbol
+from .stream_types import (Trade, restore_trade, trade_record, symbol, SIDE_SEMANTICS,
+                           SIDE_SEMANTICS_VERSION, SYNTHETIC_SIDE_SEMANTICS)
 
 SCHEMA_VERSION = "1.0"
-CALCULATION_VERSION = "1.0"
+CALCULATION_VERSION = "2.0"
+LEGACY_CALCULATION_VERSION = "1.0"
+SUPPORTED_CALCULATIONS = frozenset((LEGACY_CALCULATION_VERSION, CALCULATION_VERSION))
 WINDOWS = (60, 300, 900)
 NETWORKS = frozenset(("mainnet", "testnet", "synthetic"))
 GAP_REASONS = frozenset(("disconnect", "capture_end", "restart", "ws_continuity_change", "identity_conflict",
                         "late_trade", "pending_overflow", "stream_stale", "dedup_evicted"))
 MATH = Context(prec=192)
 ZERO = Decimal(0)
+
+
+def semantics_for(network, calculation_version):
+    if network == "synthetic": return SYNTHETIC_SIDE_SEMANTICS
+    return SIDE_SEMANTICS if calculation_version == CALCULATION_VERSION else "unverified"
 
 
 def decimal_text(value: Decimal | None) -> str | None:
@@ -108,18 +116,36 @@ class Aggregate:
                 ("base", "quote", "buy_base", "sell_base", "buy_quote", "sell_quote")}}
 
     @classmethod
-    def restore(cls, record):
+    def restore(cls, record, *, expected_signed=None):
+        signed = record["buy_base"] is not None
+        if expected_signed is not None and signed != expected_signed:
+            raise ValueError("aggregate side semantics mismatch")
+        if type(record["count"]) is not int or record["count"] < 0:
+            raise ValueError("invalid aggregate count")
         result = cls(record["buy_base"] is not None)
         result.count = record["count"]
         for name in ("base", "quote", "buy_base", "sell_base", "buy_quote", "sell_quote"):
             setattr(result, name, Decimal(record[name]) if record[name] is not None else None)
+        for name in ("base", "quote", "buy_base", "sell_base", "buy_quote", "sell_quote"):
+            value = getattr(result, name)
+            required = name in ("base", "quote") or signed
+            if required and (value is None or not value.is_finite() or value < 0):
+                raise ValueError("invalid aggregate value")
+            if not required and value is not None:
+                raise ValueError("mixed signed aggregate")
+        if signed:
+            with localcontext(MATH):
+                if result.buy_base+result.sell_base != result.base or result.buy_quote+result.sell_quote != result.quote:
+                    raise ValueError("aggregate volume mismatch")
         return result
 
 
 class AssetFlow:
     def __init__(self, network, coin):
         self.network, self.coin = network, coin
-        self.signed = network == "synthetic"
+        self.calculation_version = CALCULATION_VERSION
+        self.side_semantics_version = SIDE_SEMANTICS_VERSION
+        self.signed = True
         self.connected = False
         self.segment_id = 0
         self.segment_start_ms = self.segment_end_ms = None
@@ -163,6 +189,9 @@ class OrderFlow:
         if asset.connected:
             asset.closed_segments.append({"segment_id": asset.segment_id, "from_ms": asset.segment_start_ms,
                                           "through_ms": asset.watermark_ms, "ended_at_ms": at_ms,
+                                          "calculation_version":asset.calculation_version,
+                                          "side_semantics_version":asset.side_semantics_version,
+                                          "side_semantics":semantics_for(asset.network,asset.calculation_version),
                                           "observed": asset.closed.record(), "pending_abandoned": len(asset.pending)})
         asset.counts["pending_abandoned"] += len(asset.pending)
         asset.pending.clear()
@@ -171,6 +200,16 @@ class OrderFlow:
 
     def _connect(self, asset, op):
         if asset.connected: return
+        if asset.calculation_version == LEGACY_CALCULATION_VERSION:
+            # Keep historical values unsigned; only fresh segment aggregates
+            # use the new semantics. No replay or DB migration is implicit.
+            for segment in asset.closed_segments:
+                segment.setdefault("calculation_version", LEGACY_CALCULATION_VERSION)
+                segment.setdefault("side_semantics_version", None)
+                segment.setdefault("side_semantics", semantics_for(asset.network, LEGACY_CALCULATION_VERSION))
+            asset.calculation_version = CALCULATION_VERSION
+            asset.side_semantics_version = SIDE_SEMANTICS_VERSION
+            asset.signed = True
         asset.connected = True; asset.segment_id += 1
         asset.segment_start_ms = op.at_ms; asset.segment_end_ms = None
         asset.source_epoch, asset.source_continuity = op.source_epoch, op.source_continuity
@@ -326,9 +365,10 @@ class OrderFlow:
         if any(not window["ready"] for window in windows.values()):quality_reasons.append("window_warmup_or_unusable")
         if asset.counts["gaps"]:quality_reasons.append("historical_gaps")
         observed_available=asset.observed.count>0 or asset.segment_id>0
-        return {"kind":"order_flow", "schema_version":SCHEMA_VERSION, "calculation_version":CALCULATION_VERSION,
+        return {"kind":"order_flow", "schema_version":SCHEMA_VERSION, "calculation_version":asset.calculation_version,
                 "network":network,"symbol":coin,"as_of_ms":as_of,"read_only":True,"execution_authorized":False,
-                "side_semantics":"verified_synthetic_aggressor" if asset.signed else "unverified",
+                "side_semantics":semantics_for(network,asset.calculation_version),
+                "side_semantics_version":asset.side_semantics_version,
                 "connection":{"connected":asset.connected,"fresh":fresh,"last_contact_ms":asset.contact_ms,
                               "coverage_from_ms":asset.segment_start_ms,"coverage_through_ms":asset.coverage_through_ms},
                 "last_trade":trade_record(asset.last_trade) if asset.last_trade else None,
@@ -353,8 +393,11 @@ class OrderFlow:
 
     def export_asset(self, network, coin, *, include_seen=True):
         asset = self.asset(network, coin)
-        result = {"schema_version":SCHEMA_VERSION,"calculation_version":CALCULATION_VERSION,"config":dict(self.config),
+        result = {"schema_version":SCHEMA_VERSION,"calculation_version":asset.calculation_version,"config":dict(self.config),
                   "network":network,"coin":coin,"signed":asset.signed}
+        if asset.calculation_version == CALCULATION_VERSION:
+            result.update(side_semantics=semantics_for(network,asset.calculation_version),
+                          side_semantics_version=asset.side_semantics_version)
         for key in ("connected","segment_id","segment_start_ms","segment_end_ms","source_epoch","source_continuity",
                     "coverage_through_ms","evaluated_at_ms","watermark_ms","contact_ms","last_received_ms","max_event_ms","retention_floor_ms"):
             result[key] = getattr(asset,key)
@@ -366,21 +409,52 @@ class OrderFlow:
         return copy.deepcopy(result)
 
     def import_asset(self, record):
-        if record["schema_version"] != SCHEMA_VERSION or record["calculation_version"] != CALCULATION_VERSION or record["config"] != self.config:
+        version = record["calculation_version"]
+        if record["schema_version"] != SCHEMA_VERSION or version not in SUPPORTED_CALCULATIONS or record["config"] != self.config:
             raise ValueError("unsupported flow checkpoint configuration/version")
-        if record["signed"] != (record["network"] == "synthetic"): raise ValueError("unverified real side semantics required")
+        expected_signed = version == CALCULATION_VERSION or record["network"] == "synthetic"
+        if type(record["signed"]) is not bool or record["signed"] != expected_signed:
+            raise ValueError("checkpoint side semantics mismatch")
+        if version == CALCULATION_VERSION and (
+                record.get("side_semantics_version") != SIDE_SEMANTICS_VERSION or
+                record.get("side_semantics") != semantics_for(record["network"], version)):
+            raise ValueError("unsupported checkpoint side semantics")
+        if version == LEGACY_CALCULATION_VERSION and (
+                record.get("side_semantics_version") is not None or "side_semantics" in record):
+            raise ValueError("legacy checkpoint cannot claim new semantics")
         self.asset(record["network"],record["coin"])
         asset = AssetFlow(record["network"], record["coin"])
+        asset.calculation_version = version
+        asset.side_semantics_version = SIDE_SEMANTICS_VERSION if version == CALCULATION_VERSION else None
+        asset.signed = expected_signed
         for key in ("connected","segment_id","segment_start_ms","segment_end_ms","source_epoch","source_continuity",
                     "coverage_through_ms","evaluated_at_ms","watermark_ms","contact_ms","last_received_ms","max_event_ms","retention_floor_ms"):
             setattr(asset,key,record[key])
-        asset.closed, asset.observed = Aggregate.restore(record["closed"]), Aggregate.restore(record["observed"])
+        asset.closed = Aggregate.restore(record["closed"], expected_signed=asset.signed)
+        asset.observed = Aggregate.restore(record["observed"], expected_signed=False)
         asset.counts, asset.reasons = Counter(record["counts"]), Counter(record["reasons"])
         asset.last_trade = restore_trade(record["last_trade"]) if record["last_trade"] else None
         for row in record["pending"]:
-            op = Operation.restore(row); heapq.heappush(asset.pending,(op.trade.time_ms,op.trade.tid,op))
-        asset.buckets = OrderedDict((stamp,Aggregate.restore(value)) for stamp,value in record["buckets"])
+            op = Operation.restore(row)
+            if op.kind != "trade" or (op.network,op.coin) != (asset.network,asset.coin):
+                raise ValueError("pending trade belongs to another asset")
+            heapq.heappush(asset.pending,(op.trade.time_ms,op.trade.tid,op))
+        asset.buckets = OrderedDict((stamp,Aggregate.restore(value,expected_signed=asset.signed)) for stamp,value in record["buckets"])
         asset.closed_segments = deque(copy.deepcopy(record["closed_segments"]),maxlen=8)
+        for segment in asset.closed_segments:
+            archived_version = segment.get("calculation_version", LEGACY_CALCULATION_VERSION)
+            if archived_version not in SUPPORTED_CALCULATIONS:
+                raise ValueError("unsupported archived calculation")
+            if archived_version == CALCULATION_VERSION and (
+                    segment.get("side_semantics_version") != SIDE_SEMANTICS_VERSION or
+                    segment.get("side_semantics") != semantics_for(asset.network, archived_version)):
+                raise ValueError("unsupported archived side semantics")
+            if archived_version == LEGACY_CALCULATION_VERSION and (
+                    segment.get("side_semantics_version") is not None or
+                    segment.get("side_semantics",semantics_for(asset.network,archived_version)) != semantics_for(asset.network,archived_version)):
+                raise ValueError("legacy archive cannot claim new semantics")
+            Aggregate.restore(segment["observed"], expected_signed=(
+                archived_version == CALCULATION_VERSION or asset.network == "synthetic"))
         for row in record.get("seen",[]):
             trade = restore_trade(row); asset.seen[(trade.time_ms,trade.tid)] = trade
         if (len(asset.pending)>self.config["max_pending"] or len(asset.buckets)>self.config["max_buckets"]

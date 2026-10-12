@@ -3,8 +3,8 @@ import copy
 import unittest
 from decimal import Decimal
 
-from src.order_flow import Operation, OrderFlow
-from src.stream_types import Trade
+from src.order_flow import Operation, OrderFlow, CALCULATION_VERSION
+from src.stream_types import Trade, SIDE_SEMANTICS, SIDE_SEMANTICS_VERSION
 
 START=2_000_000_000_000
 
@@ -24,6 +24,22 @@ def advance(flow,seconds,coin="ETH",network="synthetic",contact=True):
     stamp=START+int(seconds*1000)
     flow.apply(Operation("advance",network,coin,stamp,contact_ms=stamp if contact else None))
     return flow.snapshot(network,coin)
+
+
+def legacy_record(network="mainnet", *, connected=True, **config):
+    """Synthetic v1 checkpoint shape, never derived from a real capture."""
+    record=OrderFlow(**config).export_asset(network,"ETH")
+    record["calculation_version"]="1.0"
+    record.pop("side_semantics");record.pop("side_semantics_version")
+    record["signed"]=network=="synthetic"
+    if not record["signed"]:
+        for field in ("buy_base","sell_base","buy_quote","sell_quote"):
+            record["closed"][field]=None
+    if connected:
+        record.update(connected=True,segment_id=1,segment_start_ms=START,
+                      evaluated_at_ms=START,coverage_through_ms=START,
+                      watermark_ms=START-2000,contact_ms=START)
+    return record
 
 
 class OrderFlowTests(unittest.TestCase):
@@ -68,21 +84,137 @@ class OrderFlowTests(unittest.TestCase):
             self.assertIsNone(window["buy_sell_ratio_base"])
             self.assertIn("zero_sell_denominator",window["quality_reasons"])
 
-    def test_assets_networks_and_real_unverified_semantics_are_separate(self):
+    def test_assets_networks_and_documented_aggressor_semantics_are_separate(self):
         flow=connected()
         for network,coin,size in (("mainnet","ETH",2),("testnet","ETH",3),("synthetic","HYPE",4)):
             flow.apply(Operation("connect",network,coin,START))
             flow.apply(event(1,1,coin=coin,network=network,size=str(size)))
             view=advance(flow,63,coin,network)
             self.assertEqual(view["observed_total"]["volume_base"],str(size))
-            if network!="synthetic":
-                self.assertEqual(view["side_semantics"],"unverified")
-                self.assertIsNone(view["cvd"]["base"])
-                window=view["windows"]["1m"]
-                self.assertTrue(window["ready"]);self.assertFalse(window["signed_available"])
-                for field in ("delta_base","delta_quote","cvd_window_base","buy_volume_base","sell_volume_base","cvd_slope_base_per_second"):
-                    self.assertIsNone(window[field])
-            else:self.assertEqual(view["cvd"]["base"],str(size))
+            self.assertEqual(view["side_semantics"],SIDE_SEMANTICS if network!="synthetic" else "verified_synthetic_aggressor")
+            self.assertEqual(view["calculation_version"],CALCULATION_VERSION)
+            self.assertEqual(view["side_semantics_version"],SIDE_SEMANTICS_VERSION)
+            self.assertEqual(view["cvd"]["base"],str(size))
+            window=view["windows"]["1m"]
+            self.assertTrue(window["signed_available"])
+            self.assertEqual(window["buy_volume_base"],str(size))
+            self.assertEqual(window["sell_volume_base"],"0")
+            self.assertEqual(window["delta_base"],str(size))
+
+    def test_real_ab_volumes_delta_cvd_and_all_windows_reuse_decimal_engine(self):
+        for network in ("mainnet","testnet"):
+            with self.subTest(network=network):
+                flow=OrderFlow()
+                flow.apply(Operation("connect",network,"ETH",START))
+                for second in range(960):
+                    flow.apply(event(2*second,second,network=network,size="0.3",price="10"))
+                    flow.apply(event(2*second+1,second,network=network,side="A",size="0.1",price="20"))
+                    advance(flow,second+2,network=network)
+                view=advance(flow,962,network=network)
+                self.assertEqual(Decimal(view["cvd"]["base"]),Decimal("192"))
+                self.assertEqual(Decimal(view["cvd"]["quote"]),Decimal("960"))
+                for name,count in (("1m",60),("5m",300),("15m",900)):
+                    window=view["windows"][name]
+                    self.assertTrue(window["ready"])
+                    self.assertTrue(window["signed_available"])
+                    self.assertEqual(Decimal(window["buy_volume_base"]),Decimal("0.3")*count)
+                    self.assertEqual(Decimal(window["sell_volume_base"]),Decimal("0.1")*count)
+                    self.assertEqual(Decimal(window["delta_base"]),Decimal("0.2")*count)
+                    self.assertEqual(Decimal(window["delta_quote"]),Decimal(count))
+                    self.assertEqual(window["cvd_window_base"],window["delta_base"])
+                    self.assertEqual(window["cvd_slope_base_per_second"],"0.2")
+                    self.assertEqual(window["cvd_slope_quote_per_second"],"1")
+                self.assertFalse(view["execution_authorized"])
+
+    def test_real_signed_values_require_coverage_and_real_gaps_reset_cvd(self):
+        for network in ("mainnet","testnet"):
+            flow=OrderFlow();flow.apply(Operation("connect",network,"ETH",START))
+            flow.apply(event(1,1,network=network,size="3"))
+            early=advance(flow,30,network=network)
+            self.assertFalse(early["windows"]["1m"]["signed_available"])
+            self.assertIsNone(early["windows"]["1m"]["delta_base"])
+            self.assertEqual(early["cvd"]["base"],"3")
+            flow.apply(Operation("gap",network,"ETH",START+31000,reason="ws_continuity_change"))
+            flow.apply(event(2,32,network=network,side="A",size="2"))
+            view=advance(flow,35,network=network)
+            self.assertEqual(view["cvd"]["base"],"-2")
+            self.assertEqual(view["cvd"]["segment_id"],2)
+            self.assertFalse(view["windows"]["1m"]["ready"])
+            self.assertEqual(view["observed_total"]["volume_base"],"5")
+            stale=advance(flow,66,network=network,contact=False)
+            self.assertFalse(stale["cvd"]["available"])
+            self.assertIsNone(stale["cvd"]["base"])
+
+    def test_checkpoint_semantics_and_signed_aggregates_cannot_be_forged(self):
+        flow=OrderFlow();flow.apply(Operation("connect","mainnet","ETH",START))
+        record=flow.export_asset("mainnet","ETH")
+        for mutate in (lambda r:r.pop("side_semantics_version"),
+                       lambda r:r.update(side_semantics_version="unknown"),
+                       lambda r:r.update(signed=False),
+                       lambda r:r["closed"].update(buy_base=None),
+                       lambda r:r["closed"].update(buy_base="1"),
+                       lambda r:r["closed"].update(base="NaN")):
+            bad=copy.deepcopy(record);mutate(bad)
+            with self.assertRaises((ValueError,ArithmeticError)):
+                OrderFlow().import_asset(bad)
+
+    def test_legacy_unsigned_checkpoint_stays_unsigned_until_new_segment(self):
+        flow=OrderFlow();record=legacy_record();flow.import_asset(record)
+        self.assertEqual(flow.export_asset("mainnet","ETH"),record)
+        flow.apply(event(1,1,network="mainnet",size="3"))
+        old=advance(flow,63,network="mainnet")
+        self.assertEqual(old["calculation_version"],"1.0")
+        self.assertEqual(old["side_semantics"],"unverified")
+        self.assertIsNone(old["cvd"]["base"])
+        self.assertIsNone(old["windows"]["1m"]["delta_base"])
+        flow.apply(Operation("disconnect","mainnet","ETH",START+64000,reason="restart"))
+        flow.apply(Operation("connect","mainnet","ETH",START+65000))
+        flow.apply(event(2,66,network="mainnet",side="A",size="2"))
+        new=advance(flow,128,network="mainnet")
+        self.assertEqual(new["calculation_version"],"2.0")
+        self.assertEqual(new["cvd"]["base"],"-2")
+        self.assertEqual(new["observed_total"]["volume_base"],"5")
+        archive=flow.export_asset("mainnet","ETH")["closed_segments"][0]
+        self.assertEqual(archive["calculation_version"],"1.0")
+        self.assertIsNone(archive["observed"]["buy_base"])
+        self.assertEqual(archive["observed"]["base"],"3")
+
+    def test_legacy_synthetic_checkpoint_remains_signed_and_round_trips(self):
+        record=legacy_record("synthetic");flow=OrderFlow();flow.import_asset(record)
+        self.assertEqual(flow.export_asset("synthetic","ETH"),record)
+        flow.apply(event(1,1,size="2"))
+        view=advance(flow,63)
+        self.assertEqual(view["calculation_version"],"1.0")
+        self.assertEqual(view["side_semantics"],"verified_synthetic_aggressor")
+        self.assertEqual(view["cvd"]["base"],"2")
+        bad=legacy_record();bad["signed"]=True
+        with self.assertRaises(ValueError):OrderFlow().import_asset(bad)
+
+    def test_legacy_testnet_can_open_new_signed_segment_without_mixing_history(self):
+        flow=OrderFlow();flow.import_asset(legacy_record("testnet"))
+        flow.apply(event(1,1,network="testnet",side="A",size="4"))
+        advance(flow,63,network="testnet")
+        state=flow.export_asset("testnet","ETH")
+        self.assertFalse(state["signed"])
+        self.assertIsNone(state["closed"]["sell_base"])
+        flow.apply(Operation("disconnect","testnet","ETH",START+64000,reason="restart"))
+        flow.apply(Operation("connect","testnet","ETH",START+65000))
+        flow.apply(event(2,66,network="testnet",size="2"))
+        view=advance(flow,69,network="testnet")
+        self.assertEqual(view["cvd"]["base"],"2")
+        self.assertEqual(view["observed_total"]["volume_base"],"6")
+        archived=flow.export_asset("testnet","ETH")["closed_segments"][0]
+        self.assertIsNone(archived["observed"]["sell_base"])
+        bad=flow.export_asset("testnet","ETH")
+        bad["closed_segments"][0]["side_semantics_version"]="1.0"
+        with self.assertRaises(ValueError):OrderFlow().import_asset(bad)
+
+    def test_restored_pending_trades_cannot_cross_networks(self):
+        flow=OrderFlow();flow.apply(Operation("connect","mainnet","ETH",START))
+        flow.apply(event(1,1,network="mainnet"))
+        state=flow.export_asset("mainnet","ETH")
+        state["pending"][0]["network"]="testnet"
+        with self.assertRaises(ValueError):OrderFlow().import_asset(state)
 
     def test_duplicates_conflicts_no_double_count_and_new_segment(self):
         flow=connected();op=event(1,1)
