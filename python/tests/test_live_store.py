@@ -190,3 +190,129 @@ class LiveStoreTests(unittest.TestCase):
         self.assertEqual(live.read("mainnet","ETH")["observed_total"]["unique_trades"],0)
         live.sync_ws(client,now_ms=START+2000)
         self.assertEqual(live.read("mainnet","ETH")["observed_total"]["unique_trades"],1)
+
+    def timed_live(self, *, cache_capacity=100_000):
+        clock = [1]
+        client = self.fake()
+        client.clock_ms = lambda: START+clock[0]*1000
+        client.monotonic = lambda: float(clock[0])
+        client.dedup_capacity = cache_capacity
+        live = LiveStore(self.journal, OrderFlow(max_seen=2))
+        live.sync_ws(client, now_ms=client.clock_ms())
+        self.assertTrue(client.durable_dedup)
+        return client, live, clock
+
+    def send_at(self, client, live, clock, seconds, rows):
+        clock[0] = seconds
+        self.assertTrue(client.handle_message(packet("trades", rows)))
+        live.sync_ws(client, now_ms=client.clock_ms())
+
+    def test_thirty_minute_continuity_survives_default_ttl_and_recovery(self):
+        client, live, clock = self.timed_live()
+        first = live.read("mainnet", "ETH").to_dict()
+        # Every 10s supplies stream contact; no simulated disconnect/stale gap.
+        for tid, seconds in enumerate(range(1, 1802, 10), 1):
+            self.send_at(client, live, clock, seconds,
+                         [trade(coin, tid=tid, time_ms=START+seconds*1000)
+                          for coin in client.symbols])
+        clock[0] = 1804
+        self.assertTrue(client.handle_message(packet("l2Book", book(time_ms=client.clock_ms()))))
+        live.sync_ws(client, now_ms=client.clock_ms())
+        self.assertGreater(client.counts["dedup_evictions"], 0)
+        self.assertEqual(client.continuity_epoch, {"ETH": 0, "HYPE": 0})
+        for coin in client.symbols:
+            view = live.read("mainnet", coin).to_dict()
+            self.assertEqual(view["cvd"]["segment_id"], 1)
+            self.assertEqual(view["observed_total"]["unique_trades"], 181)
+            self.assertEqual(view["counts"].get("pending_abandoned", 0), 0)
+            self.assertEqual(view["counts"]["closed_trades"], 181)
+            self.assertEqual(view["gap_reasons"], {})
+            self.assertEqual(view["memory"]["pending"], 0)
+            self.assertEqual(view["side_semantics"], "unverified")
+            self.assertIsNone(view["cvd"]["base"])
+            for window in view["windows"].values():
+                self.assertTrue(window["ready"])
+                self.assertFalse(window["signed_available"])
+                self.assertIsNone(window["delta_base"])
+                self.assertIsNone(window["buy_volume_base"])
+            self.assertEqual(set(first), set(view))
+        self.assertTrue(recovery_check(self.journal, live.engine)["state_matches"])
+        state = {coin: live.engine.export_asset("mainnet", coin, include_seen=False)
+                 for coin in client.symbols}
+        self.journal.close()
+        with FlowStore(Path(self.temp.name)/"flow.sqlite3") as reopened:
+            recovered = reopened.recover()
+            for coin in client.symbols:
+                self.assertEqual(recovered.export_asset("mainnet", coin, include_seen=False), state[coin])
+
+    def test_sqlite_deduplicates_old_replay_after_ttl_without_segment_reset(self):
+        client, live, clock = self.timed_live()
+        original = trade(tid=1, time_ms=START+1000)
+        for seconds, row in ((1, original), (11, trade(tid=2, time_ms=START+11000)),
+                             (1202, trade(tid=3, time_ms=START+1202000))):
+            self.send_at(client, live, clock, seconds, [row])
+        self.assertNotIn(("mainnet", START+1000, "ETH", 1), client.seen)
+        self.assertNotIn((START+1000, 1), live.engine.asset("mainnet", "ETH").seen)
+        before = live.read("mainnet", "ETH").to_dict()
+        self.send_at(client, live, clock, 1203, [original])
+        after = live.read("mainnet", "ETH").to_dict()
+        self.assertEqual(after["counts"]["duplicates"], 1)
+        self.assertEqual(after["observed_total"], before["observed_total"])
+        self.assertEqual(after["cvd"]["segment_id"], before["cvd"]["segment_id"])
+        self.assertEqual(after["gap_reasons"], {})
+        self.assertEqual(client.continuity_epoch["ETH"], 0)
+        self.assertEqual(self.journal.db.execute("SELECT count(*) FROM journal WHERE kind='trade'").fetchone()[0], 3)
+        self.assertTrue(recovery_check(self.journal, live.engine)["state_matches"])
+
+    def test_recovered_sqlite_handles_evicted_duplicates_and_side_conflicts(self):
+        client, live, clock = self.timed_live(cache_capacity=1)
+        original = trade(tid=1, time_ms=START+1000)
+        for seconds, row in ((1, original), (11, trade(tid=2, time_ms=START+11000)),
+                             (1202, trade(tid=3, time_ms=START+1202000))):
+            self.send_at(client, live, clock, seconds, [row])
+        self.assertEqual(client.continuity_epoch["ETH"], 0)
+        self.assertEqual(live.read("mainnet", "ETH")["cvd"]["segment_id"], 1)
+        self.journal.close()
+        with FlowStore(Path(self.temp.name)/"flow.sqlite3") as reopened:
+            recovered = LiveStore(reopened)
+            client.seen.clear()  # A restored WS has no RAM identity cache.
+            self.send_at(client, recovered, clock, 1203, [original])
+            view = recovered.read("mainnet", "ETH")
+            self.assertEqual(view["observed_total"]["unique_trades"], 3)
+            self.assertEqual(view["counts"]["duplicates"], 1)
+            self.assertEqual(view["gap_reasons"], {"restart": 1})
+            segment = view["cvd"]["segment_id"]
+            # Expire the replay's RAM ID before a conflicting side arrives.
+            self.send_at(client, recovered, clock, 2404,
+                         [trade(tid=1, time_ms=START+1000, side="A")])
+            view = recovered.read("mainnet", "ETH")
+            self.assertEqual(view["counts"]["conflicts"], 1)
+            self.assertEqual(view["cvd"]["segment_id"], segment+1)
+            self.assertEqual(view["gap_reasons"], {"restart": 1, "identity_conflict": 1})
+            self.assertEqual(view["observed_total"]["unique_trades"], 3)
+            self.assertEqual(reopened.verify()["integrity"], "verified")
+
+    def test_durable_consumer_keeps_real_late_and_retention_gaps(self):
+        client, live, clock = self.timed_live(cache_capacity=1)
+        self.send_at(client, live, clock, 1, [trade(tid=1, time_ms=START+1000)])
+        self.send_at(client, live, clock, 11, [trade(tid=2, time_ms=START+11000)])
+        self.send_at(client, live, clock, 21, [trade(tid=3, time_ms=START+21000)])
+        self.send_at(client, live, clock, 22, [trade(tid=4, time_ms=START+5000)])
+        view = live.read("mainnet", "ETH")
+        self.assertEqual(view["counts"]["late_trades"], 1)
+        self.assertEqual(view["gap_reasons"], {"late_trade": 1})
+        self.assertEqual(view["cvd"]["segment_id"], 2)
+        # Prune identities inside the current segment, then resend an old ID.
+        self.journal.max_rows = 6
+        for seconds in (31, 41, 51, 61):
+            self.send_at(client, live, clock, seconds,
+                         [trade(tid=seconds, time_ms=START+seconds*1000)])
+        floor = live.engine.asset("mainnet", "ETH").retention_floor_ms
+        self.assertGreaterEqual(floor, START+31000)
+        before = live.read("mainnet", "ETH").to_dict()["observed_total"]
+        self.send_at(client, live, clock, 62, [trade(tid=31, time_ms=START+31000)])
+        view = live.read("mainnet", "ETH")
+        self.assertEqual(view["counts"]["outside_retention"], 1)
+        self.assertEqual(view["observed_total"], before)
+        self.assertEqual(view["gap_reasons"]["late_trade"], 2)
+        self.assertTrue(recovery_check(self.journal, live.engine)["state_matches"])

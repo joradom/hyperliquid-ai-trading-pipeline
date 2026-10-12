@@ -201,6 +201,16 @@ una identidad degrada continuidad. Checkpoints conservan los acumulados y
 buckets aunque el journal anterior se haya podado. El floor y su pérdida de
 capacidad de auditoría individual son explícitos.
 
+La expiración normal de IDs WS tras 1200s no cambia continuidad. Live Store
+declara al transporte que existe un consumidor durable: los replays antiguos
+y las expulsiones por capacidad se resuelven mediante la identidad retenida
+en SQLite, antes de aplicar los gates de tardanza del motor. Duplicados no se
+suman; conflictos, eventos fuera de retención capaces de afectar al segmento,
+trades realmente tardíos, pérdidas de cola y cambios de época siguen degradando
+continuidad. Los contadores de deduplicación WS describen su caché local; los
+acumulados del motor conservan la unicidad durable. Sin SQLite no se promete
+deduplicación eterna. Mainnet/testnet mantienen `side_semantics=unverified`.
+
 La quota principal usa max_page_count y un fallo FULL es atómico. El WAL y
 archivos auxiliares pueden añadir espacio transitorio; no se presenta 64 MiB
 como cuota dura de todos los archivos. Se hace autocheckpoint a 64 páginas y

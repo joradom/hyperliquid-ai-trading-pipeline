@@ -73,6 +73,9 @@ class LiveStore:
         Coverage begins at this observer's confirmation, conservatively later
         than the socket ACK. Epoch changes never bridge an unobserved interval.
         """
+        # SQLite is the identity authority, including after WS cache expiry.
+        # Real late/conflicting trades still cut segments inside OrderFlow.
+        client.durable_dedup = not self.journal.closed
         operations=[]
         next_source={}
         active=(client.state=="live" and client.last_message_ms is not None

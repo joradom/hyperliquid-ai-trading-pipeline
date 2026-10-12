@@ -164,14 +164,20 @@ y queue_dropped; conexión estable no equivale a tape completo.
 
 El conteo de bytes de cola no es una medida exacta del heap de CPython; todos
 los campos y el número de objetos también están acotados. Saturar la cola
-descarta el nuevo evento y registra explícitamente queue_dropped/gap. Evicción
-por capacidad o TTL del dedup degrada continuidad: un replay posterior podría
-ya no ser identificable como duplicado. Sin persistencia no se garantiza
-deduplicación al reiniciar el proceso.
+descarta el nuevo evento y registra explícitamente queue_dropped/gap. La
+expiración TTL solo libera IDs y aumenta `dedup_evictions`: no implica pérdida
+de trades ni cambia continuidad. Sin consumidor durable, la evicción por
+capacidad conserva su gap conservador y no se garantiza deduplicación fuera
+de la caché o al reiniciar el proceso. Con Live Store, SQLite verifica las
+identidades retenidas antes de sumar o clasificar tardanza; la evicción de
+caché por capacidad tampoco necesita cortar el segmento.
 
 Eventos de trades fuera de orden se entregan con metadata. Si retroceden más
-de 2 s respecto al máximo observado por activo, se marca gap. No existe aún
-reordenador de agregación: será responsabilidad de FASE 2. Pre_connection
+de 2 s respecto al máximo observado por activo, el cliente standalone marca
+gap. Con consumidor durable, el motor decide después de comprobar duplicados,
+conflictos y retención; un replay duplicado no es una pérdida de continuidad.
+El transporte no reordena agregados: esa responsabilidad pertenece a Order Flow.
+Pre_connection
 identifica datos anteriores a la conexión; no certifica un snapshot completo.
 No hay números de secuencia continuos: ausencia de errores conocidos no demuestra
 ausencia de pérdida, y silencio de trades no prueba desconexión si heartbeat vive.

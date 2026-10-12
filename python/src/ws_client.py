@@ -91,6 +91,9 @@ class PublicWSClient:
         self.trade_queue: deque[ReceivedTrade] = deque()
         self.queue_size_bytes = 0
         self.seen: OrderedDict[tuple, tuple[Trade, float]] = OrderedDict()
+        # A durable consumer checks retained identities before judging lateness.
+        # Standalone transport keeps its conservative capacity/late gap policy.
+        self.durable_dedup = False
         self.books: dict[str, Book] = {}
         self.book_epochs: dict[str, int] = {}
         self.book_conflicts: dict[str, int] = {}
@@ -134,9 +137,10 @@ class PublicWSClient:
 
     def _expire_ids(self, now: float):
         while self.seen and next(iter(self.seen.values()))[1] <= now - self.dedup_ttl:
-            _, (trade, _) = self.seen.popitem(last=False)
+            self.seen.popitem(last=False)
             self.counts["dedup_evictions"] += 1
-            self._gap("dedup_horizon_expired", trade.coin)
+            # Cache expiry is not missing traffic. Old replays are still checked
+            # by the consumer's retained identity/retention and watermark gates.
 
     def _probe(self, trade: Trade, pre_connection: bool, out_of_order: bool):
         counts = self.probe_counts[trade.coin]
@@ -179,7 +183,8 @@ class PublicWSClient:
         if len(self.seen) >= self.dedup_capacity:
             _, (evicted, _) = self.seen.popitem(last=False)
             self.counts["dedup_evictions"] += 1
-            self._gap("dedup_capacity_eviction", evicted.coin)
+            if not self.durable_dedup:
+                self._gap("dedup_capacity_eviction", evicted.coin)
         self.seen[trade.identity] = (trade, now)
         previous = self.last_trade_ms.get(trade.coin)
         out_of_order = previous is not None and trade.time_ms < previous
@@ -187,7 +192,7 @@ class PublicWSClient:
         if out_of_order:
             counts["out_of_order"] += 1
             self.counts["out_of_order"] += 1
-            if previous - trade.time_ms > self.late_tolerance_ms:
+            if previous - trade.time_ms > self.late_tolerance_ms and not self.durable_dedup:
                 self._gap("late_trade_beyond_tolerance", trade.coin)
         if pre_connection:
             counts["pre_connection_trades"] += 1

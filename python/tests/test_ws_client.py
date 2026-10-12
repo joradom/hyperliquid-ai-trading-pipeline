@@ -84,7 +84,7 @@ class WSStateTests(unittest.TestCase):
             self.assertGreater(client.counts["queue_dropped"], 0)
             self.assertIn("trade_queue_overflow", client.gap_reasons["ETH"])
 
-    def test_dedup_capacity_and_ttl_are_explicit_uncertainty(self):
+    def test_standalone_dedup_capacity_still_marks_uncertainty(self):
         now = 10.0
         client = ready(dedup_capacity=1, monotonic=lambda: now, dedup_ttl_seconds=1)
         client.handle_message(packet("trades", [trade()]))
@@ -92,8 +92,42 @@ class WSStateTests(unittest.TestCase):
         self.assertEqual(len(client.seen), 1)
         self.assertIn("dedup_capacity_eviction", client.gap_reasons["ETH"])
         now += 2
+        continuity = dict(client.continuity_epoch)
         client.handle_message(packet("trades", [trade(tid=3)]))
-        self.assertIn("dedup_horizon_expired", client.gap_reasons["ETH"])
+        self.assertEqual(client.continuity_epoch, continuity)
+        self.assertNotIn("dedup_horizon_expired", client.gap_reasons["ETH"])
+        self.assertEqual(client.counts["dedup_evictions"], 2)
+
+    def test_default_ttl_expires_ids_without_gaps_across_assets(self):
+        now = 0.0
+        client = ready(monotonic=lambda: now)
+        client.handle_message(packet("trades", [trade("ETH"), trade("HYPE")]))
+        before = client.summary()
+        now = 1199.999
+        client.handle_message(packet("trades", [trade("ETH", tid=2)]))
+        self.assertEqual(client.counts["dedup_evictions"], 0)
+        now = 1200.0
+        client.handle_message(packet("trades", [trade("ETH", tid=3)]))
+        self.assertEqual(client.counts["dedup_evictions"], 2)
+        now = 1201.0
+        client.handle_message(packet("trades", [trade("HYPE", tid=3)]))
+        after = client.summary()
+        self.assertEqual(client.continuity_epoch, {"ETH": 0, "HYPE": 0})
+        self.assertEqual(client.counts["continuity_interruptions"], 0)
+        self.assertEqual(set(before), set(after))
+        for coin in client.symbols:
+            self.assertEqual(after["assets"][coin]["continuity"], "no_known_gap")
+            self.assertEqual(client.gap_reasons[coin], {})
+
+    def test_durable_consumer_defers_old_replay_gap_but_keeps_loss_gaps(self):
+        client = ready(dedup_capacity=1, queue_capacity=2)
+        client.durable_dedup = True
+        for tid, stamp in ((1, NOW), (2, NOW+1), (3, NOW-3000)):
+            client.handle_message(packet("trades", [trade(tid=tid, time_ms=stamp)]))
+        self.assertEqual(client.counts["dedup_evictions"], 2)
+        self.assertNotIn("late_trade_beyond_tolerance", client.gap_reasons["ETH"])
+        self.assertNotIn("dedup_capacity_eviction", client.gap_reasons["ETH"])
+        self.assertIn("trade_queue_overflow", client.gap_reasons["ETH"])
 
     def test_book_history_is_bounded_old_books_never_replace_new(self):
         client = ready(book_history_capacity=2)

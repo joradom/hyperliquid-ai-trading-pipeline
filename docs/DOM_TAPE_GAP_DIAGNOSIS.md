@@ -1,5 +1,11 @@
 # R102 DOM — Diagnóstico TAPE GAP de ETH/HYPE
 
+Este documento conserva el diagnóstico histórico anterior a la corrección.
+El código actual ya no convierte la expiración TTL en un gap; Live Store
+delega deduplicación y tardanza al motor con SQLite. Las sesiones y cifras
+de este informe no se han recalculado ni modificado. Véase el comportamiento
+actual en [Order Flow](components/ORDER_FLOW.md#retención-memoria-y-backpressure).
+
 Base inspeccionada: `data/order_flow/dom_runs/dom_rcn_ujuo/flow.sqlite3`.
 Lectura con SQLite `mode=ro&immutable=1`, después de comprobar ausencia de WAL.
 Sin abrir FlowStore sobre esa ruta, conectar al WS o cambiar datos/configuración.
@@ -97,8 +103,8 @@ errores WS. Por tanto no permite inventariar cualquier rechazo de mensaje que
 no altere continuidad. La atribución al TTL se apoya en tiempo, código actual
 y coincidencia exacta del replay, no en un log original de _gap por ID.
 
-No se modificó TTL, tratamiento de gaps, ventanas, buckets, persistencia o
-reglas de calidad. El problema de continuidad de sesiones prolongadas sigue
-presente; corregirlo requeriría una tarea autorizada sobre el transporte/motores.
-Este trabajo solo añade pulido y ayuda de presentación al DOM. H/? muestra los
+En aquel trabajo no se modificó TTL, tratamiento de gaps, ventanas, buckets,
+persistencia o reglas de calidad. El problema de continuidad de sesiones
+prolongadas seguía presente; corregirlo requería otra tarea sobre el transporte/motores.
+El trabajo original solo añadió pulido y ayuda de presentación al DOM. H/? muestra los
 motivos ya disponibles en las vistas WS/Flow de futuras sesiones, sin cambiarlos.
