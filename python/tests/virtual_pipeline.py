@@ -91,6 +91,31 @@ class Executor:
                     if not self.e.cv.wait(timeout=5): raise AssertionError('uncontrolled blocking in simulation')
 
 
+def synthetic_value(payload, symbols, wall):
+    """Shared synthetic REST fixture for virtual and real-thread benchmarks."""
+    kind = payload['type']
+    symbol = payload.get('coin', payload.get('req', {}).get('coin'))
+    if kind == 'metaAndAssetCtxs':
+        return [{'universe':[{'name':s,'szDecimals':2,'maxLeverage':3} for s in symbols]},
+                [{'markPx':'104','midPx':'104.005','oraclePx':'104','prevDayPx':'103',
+                  'funding':'0.00001','openInterest':'200000','dayNtlVlm':str(100000000-i*100000),
+                  'premium':'0','impactPxs':['104','104.01']} for i,s in enumerate(symbols)]]
+    if kind == 'candleSnapshot':
+        r=payload['req']; d=INTERVAL_MS[r['interval']]; end=r['endTime']//d*d
+        start=r['startTime']//d*d
+        value=[]
+        for i,t in enumerate(range(start,end,d)):
+            c=100+i*.02
+            value.append({'t':t,'T':t+d-1,'o':str(c-.01),'h':str(c+.2),'l':str(c-.2),'c':str(c),
+                          'v':'300' if t==end-d else '100','n':10})
+        return value
+    if kind == 'l2Book':
+        return {'coin':symbol,'time':wall(),'levels':[[{'px':'104','sz':'200','n':2}],[{'px':'104.01','sz':'200','n':2}]]}
+    if kind == 'fundingHistory':
+        return [{'time':wall()-i*3600000,'fundingRate':'0.00001'} for i in reversed(range(72))]
+    raise AssertionError('unexpected request')
+
+
 def scenario(mode="volume",pool=10,latency=0.02,*,incremental=True,max_admitted=3,model_latency=0):
     e=Engine(); calls=[]; captures=[]; model_calls=[]; weights=[]
     config=RESTConfig()
@@ -103,24 +128,7 @@ def scenario(mode="volume",pool=10,latency=0.02,*,incremental=True,max_admitted=
             weights.append(request_weight(payload)); e.wait(timeout)
             raise TimeoutError('synthetic transport timeout')
         e.wait(latency)
-        if kind=='metaAndAssetCtxs':
-            value=[{'universe':[{'name':s,'szDecimals':2,'maxLeverage':3} for s in symbols]},
-                   [{'markPx':'104','midPx':'104.005','oraclePx':'104','prevDayPx':'103',
-                     'funding':'0.00001','openInterest':'200000','dayNtlVlm':str(100000000-i*100000),
-                     'premium':'0','impactPxs':['104','104.01']} for i,s in enumerate(symbols)]]
-        elif kind=='candleSnapshot':
-            r=payload['req']; d=INTERVAL_MS[r['interval']]; end=r['endTime']//d*d
-            start=r['startTime']//d*d
-            value=[]
-            for i,t in enumerate(range(start,end,d)):
-                c=100+i*.02
-                value.append({'t':t,'T':t+d-1,'o':str(c-.01),'h':str(c+.2),'l':str(c-.2),'c':str(c),
-                              'v':'300' if t==end-d else '100','n':10})
-        elif kind=='l2Book':
-            value={'coin':symbol,'time':e.wall(),'levels':[[{'px':'104','sz':'200','n':2}],[{'px':'104.01','sz':'200','n':2}]]}
-        elif kind=='fundingHistory':
-            value=[{'time':e.wall()-i*3600000,'fundingRate':'0.00001'} for i in reversed(range(72))]
-        else: raise AssertionError('unexpected request')
+        value=synthetic_value(payload, symbols, e.wall)
         weights.append(request_weight(payload,value))
         return Response(json.dumps(value))
     client=HyperliquidInfoClient(coordinator=coordinator,transport=transport,clock_ms=e.wall,rng=lambda:0)
